@@ -20,7 +20,7 @@ class SocketService {
     
 
     
-    this.socket = io(process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001', {
+    this.socket = io(process.env.NEXT_PUBLIC_BACKEND_URL || 'https://twok-music-qz52.onrender.com', {
       transports: ['websocket'],
       autoConnect: true,
     });
