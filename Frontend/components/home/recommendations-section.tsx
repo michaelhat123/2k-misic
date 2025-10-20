@@ -8,13 +8,16 @@ import { Sparkles, Play, Heart, Plus } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 import { recommendationsApi } from "@/lib/api/recommendations"
 import { usePlayer } from "../player/player-provider"
+import { useAuth } from "../auth/auth-provider"
 
 export function RecommendationsSection() {
   const { playTrack } = usePlayer()
+  const { user } = useAuth()
 
   const { data: recommendations, isLoading } = useQuery({
     queryKey: ["recommendations"],
     queryFn: () => recommendationsApi.getRecommendations(),
+    enabled: !!user, // Only run when user is authenticated
   })
 
   if (isLoading) {

@@ -20,6 +20,7 @@ interface HiddenYouTubePlayerProps {
   onStateChange?: (event: any) => void;
   onProgress?: (currentTime: number, duration: number) => void;
   onEnd?: () => void;
+  onError?: (message: string) => void;
 }
 
 export const HiddenYouTubePlayer: React.FC<HiddenYouTubePlayerProps> = ({
@@ -31,7 +32,8 @@ export const HiddenYouTubePlayer: React.FC<HiddenYouTubePlayerProps> = ({
   onReady,
   onStateChange,
   onProgress,
-  onEnd
+  onEnd,
+  onError
 }) => {
   const playerRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -40,7 +42,6 @@ export const HiddenYouTubePlayer: React.FC<HiddenYouTubePlayerProps> = ({
 
   // Load YouTube IFrame Player API
   useEffect(() => {
-    console.log('🚨 HIDDEN PLAYER EFFECT - Load YouTube API');
     if (typeof window === 'undefined') return;
 
     // Check if API is already loaded
@@ -93,27 +94,36 @@ export const HiddenYouTubePlayer: React.FC<HiddenYouTubePlayerProps> = ({
       },
       events: {
         onReady: (event: any) => {
-          console.log('🎬 YouTube player ready!');
           const player = event.target;
           
           // Force play to handle autoplay restrictions
           try {
-            console.log('🎵 Attempting to play video...');
             player.playVideo();
-            console.log('✅ playVideo() called successfully');
           } catch (error) {
-            console.warn('⚠️ Error calling playVideo():', error);
+            // Silent fail
           }
           
           onReady?.(player);
         },
+        onError: (event: any) => {
+          // Handle YouTube playback errors
+          const errorCode = event.data;
+          
+          // Error 150: Video cannot be played in embedded players
+          if (errorCode === 150 || errorCode === 101) {
+            onError?.("This song can't be played");
+          }
+        },
         onStateChange: (event: any) => {
           onStateChange?.(event);
           
-          // If video ended - DON'T destroy player instance!
-          if (event.data === 0) {
-            console.log('🎥 Video ended - keeping player alive for repeat');
-            onEnd?.();
+          // Handle different states more reliably
+          if (event.data === 0) { // Ended
+            // Let the progress tracker handle the end to avoid double calls
+          } else if (event.data === 1) { // Playing
+            // Playing
+          } else if (event.data === 2) { // Paused
+            // Paused
           }
         },
       },
@@ -126,20 +136,9 @@ export const HiddenYouTubePlayer: React.FC<HiddenYouTubePlayerProps> = ({
 
   // Update video when videoId OR reloadTrigger changes
   useEffect(() => {
-    console.log('🚨 VIDEO ID/RELOAD USEEFFECT TRIGGERED!');
-    console.log('🚨 VIDEO EFFECT - Dependencies:', { player: !!player, videoId, reloadTrigger });
-    console.log('🚨 VIDEO EFFECT - Player type:', typeof player);
-    
     if (!player || !videoId) {
-      console.log('❌ VIDEO EFFECT - Missing requirements:', { player: !!player, videoId: !!videoId });
-      if (!player) console.log('❌ Player is null/undefined');
-      if (!videoId) console.log('❌ VideoId is null/undefined/empty');
       return;
     }
-
-    console.log('✅ VIDEO EFFECT - All requirements met!');
-    console.log('📺 HIDDEN PLAYER: Loading video (trigger=' + reloadTrigger + '):', videoId);
-    console.log('📺 HIDDEN PLAYER: Player state before load:', player.getPlayerState?.() || 'unknown');
     
     try {
       // 🚀 FORCE VIDEO LOAD - Essential for cached videos and repeats!
@@ -150,32 +149,27 @@ export const HiddenYouTubePlayer: React.FC<HiddenYouTubePlayerProps> = ({
           suggestedQuality: 'default'
         });
       } else {
-        // Silently ignore if loadVideoById is not a function (suppress console error)
+
         return;
       }
-      
-      console.log('✅ HIDDEN PLAYER: Video load command sent (reload trigger: ' + reloadTrigger + ')');
       
       // 🚀 AGGRESSIVE AUTO-PLAY for cached videos and repeats
       setTimeout(() => {
         try {
-          console.log('▶️ HIDDEN PLAYER: Auto-playing loaded video (trigger=' + reloadTrigger + ')...');
           const currentState = player.getPlayerState?.() || -1;
-          console.log('📊 HIDDEN PLAYER: Player state before play:', currentState);
           
           player.playVideo();
-          console.log('✅ HIDDEN PLAYER: Play command sent successfully (trigger=' + reloadTrigger + ')');
         } catch (playError) {
-          console.error('❌ HIDDEN PLAYER: Auto-play failed:', playError);
+          // Silent fail
         }
       }, 800); // Longer delay to ensure video is fully loaded
       
     } catch (error) {
-      console.error('❌ HIDDEN PLAYER: Error loading video:', error);
+      // Silent fail
     }
   }, [player, videoId, reloadTrigger]); // 🚀 CRITICAL: Added reloadTrigger to dependencies!
 
-  // Progress tracking
+  // Progress tracking with better precision
   useEffect(() => {
     if (!player || !onProgress) return;
 
@@ -183,23 +177,24 @@ export const HiddenYouTubePlayer: React.FC<HiddenYouTubePlayerProps> = ({
       try {
         const current = player.getCurrentTime();
         const videoDuration = player.getDuration();
+        
+        // Don't handle end here - let YouTube's proper end event handle it
+        // This prevents double end calls and restart issues
+        
         onProgress(current, videoDuration);
       } catch (error) {
-        console.warn('Error getting YouTube player time:', error);
+        // Silent fail
       }
-    }, 1000);
+    }, 250); // More frequent updates for better precision
 
     return () => clearInterval(interval);
-  }, [player, onProgress]);
+  }, [player, onProgress, onEnd]);
 
   // DISABLED: Control effect conflicts with player-provider's direct YouTube control
   // The player-provider now handles play/pause directly via togglePlay()
   // This effect was causing race conditions and feedback loops
   
-  // useEffect(() => {
-  //   if (!player) return;
-  //   console.log('🎮 Control effect disabled to prevent conflicts');
-  // }, [player, isPlaying]);
+  // Control effect disabled to prevent conflicts
 
   // Seek to specific time
   useEffect(() => {
@@ -214,7 +209,7 @@ export const HiddenYouTubePlayer: React.FC<HiddenYouTubePlayerProps> = ({
         player.seekTo(currentTime, true);
       }
     } catch (error) {
-      console.warn('Error seeking YouTube player:', error);
+      // Silent fail
     }
   }, [player, currentTime]);
 

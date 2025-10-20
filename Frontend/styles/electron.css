@@ -1,0 +1,100 @@
+/* Electron-specific styles */
+
+/* Make titlebar draggable */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+/* Make buttons in titlebar clickable */
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Electron window styles */
+body.electron {
+  /* Remove any default margins/padding */
+  margin: 0;
+  padding: 0;
+  
+  /* Remove outer scrollbar */
+  overflow: hidden;
+  height: 100vh;
+  
+  /* Prevent text selection on drag regions */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Ensure html and root elements don't scroll */
+html.electron {
+  overflow: hidden;
+  height: 100vh;
+}
+
+#__next {
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Make content selectable */
+body.electron .content {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Hide outer scrollbars completely */
+body.electron::-webkit-scrollbar {
+  display: none;
+}
+
+/* Custom scrollbar for internal content only */
+body.electron .content ::-webkit-scrollbar {
+  width: 8px;
+}
+
+body.electron .content ::-webkit-scrollbar-track {
+  background: #1a1a2e;
+}
+
+body.electron .content ::-webkit-scrollbar-thumb {
+  background: #4a4a6a;
+  border-radius: 4px;
+}
+
+body.electron .content ::-webkit-scrollbar-thumb:hover {
+  background: #5a5a7a;
+}
+
+/* Discord-like styling */
+body.electron {
+  background-color: #0f0f23;
+  color: #ffffff;
+}
+
+/* Prevent context menu on production */
+body.electron.production {
+  -webkit-context-menu: none;
+}
+
+/* Window controls hover effects */
+.window-control {
+  transition: background-color 0.2s ease;
+}
+
+.window-control:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.window-control.close:hover {
+  background-color: #e74c3c;
+}
+
+/* Frameless window border */
+body.electron {
+  border: 1px solid #2c2c54;
+}
+
+/* Fix for Windows specific styling */
+body.electron.win32 {
+  border: none;
+}

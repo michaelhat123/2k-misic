@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { useRouter } from "next/navigation"
 import SimpleBar from 'simplebar-react'
 import 'simplebar-react/dist/simplebar.min.css'
 import { Button } from "@/components/ui/button"
@@ -12,11 +13,13 @@ import { recommendationsApi } from "@/lib/api/recommendations"
 import { SearchOverlay } from "../search/search-overlay"
 import { useSearch } from "../layout/top-navigation"
 import { ProfileOverlay } from "../profile/profile-overlay"
+import { MusicDiscovery } from "../discovery/music-discovery"
 import { useNavigation } from "../layout/navigation-context"
 import { motion } from "framer-motion"
 import { OptimizedImage, batchPreloadImages } from "@/components/ui/OptimizedImage"
-
-
+import { PlayerBar } from "../player/player-bar"
+import { usePlayer } from "../player/player-provider"
+import { getTrackStream } from "@/lib/api/youtube-music"
 
 type ContentType = "all" | "music" | "podcasts" | "albums"
 
@@ -57,10 +60,146 @@ const getImageWithFallback = (item: Track, type: 'track' | 'album' | 'podcast' =
 export function SpotifyHomepage() {
   const [activeTab, setActiveTab] = useState<ContentType>("all")
   const { isAuthenticated, hasValidToken } = useAuthGuard()
-  const { searchQuery } = useSearch()
-  const { showProfile } = useNavigation()
+  const router = useRouter()
   
+  // Safe search hook usage - handle case where SearchProvider isn't available yet
+  let searchQuery = ""
+  let setSearchQuery = (query: string) => {}
+  try {
+    const searchContext = useSearch()
+    searchQuery = searchContext.searchQuery
+    setSearchQuery = searchContext.setSearchQuery
+  } catch (error) {
+    // SearchProvider not available yet, use empty string and no-op function
+  }
+  
+  // Safe navigation hook usage - handle case where NavigationProvider isn't available yet
+  let showProfile = false
+  let showDiscovery = false
+  let setShowDiscovery = (show: boolean) => {}
+  let suppressDiscovery = false
+  let setSuppressDiscovery = (suppress: boolean) => {}
+  try {
+    const navigationContext = useNavigation()
+    showProfile = navigationContext.showProfile
+    showDiscovery = navigationContext.showDiscovery
+    setShowDiscovery = navigationContext.setShowDiscovery
+    suppressDiscovery = navigationContext.suppressDiscovery
+    setSuppressDiscovery = navigationContext.setSuppressDiscovery
+  } catch (error) {
+    // NavigationProvider not available yet, use default values
+  }
+  
+  const { playTrack, currentTrack, isPlaying } = usePlayer()
+  
+  // State for tracking loading and playing tracks
+  const [loadingTracks, setLoadingTracks] = useState<Record<string, number>>({})
+  const [playingTrack, setPlayingTrack] = useState<string | null>(null)
+  
+  // Show discovery when search is cleared (but not on initial load and not when suppressed by Home click)
+  const [hasSearched, setHasSearched] = useState(false)
 
+  // Determine what to show based on state
+  // Use a derived condition so UI can switch to Discovery immediately on clear (no homepage flash)
+  const derivedShowDiscovery = !searchQuery && !showProfile && hasSearched && !suppressDiscovery
+  const shouldShowDiscovery = derivedShowDiscovery
+  const shouldShowHomepage = !searchQuery && !showProfile && !derivedShowDiscovery
+
+  useEffect(() => {
+    if (searchQuery) {
+      setHasSearched(true)
+      // While searching, discovery should be hidden and suppression reset for next clear
+      setShowDiscovery(false)
+      setSuppressDiscovery(false)
+    } else if (hasSearched && !searchQuery && !suppressDiscovery) {
+      // Search was cleared and not suppressed by Home click: show discovery immediately
+      setShowDiscovery(true)
+    }
+  }, [searchQuery, hasSearched, suppressDiscovery, setShowDiscovery, setSuppressDiscovery])
+  
+  // Handle category selection from discovery
+  const handleCategorySelect = (category: string, artist: string) => {
+    setShowDiscovery(false)
+    setSearchQuery(`${category} ${artist}`)
+  }
+  
+  // Handle closing discovery (go back to homepage)
+  const handleCloseDiscovery = () => {
+    setShowDiscovery(false)
+    setHasSearched(false) // Reset search state
+  }
+  
+  // Handle playing tracks from homepage
+  const handlePlayTrack = async (track: Track) => {
+    try {
+      setPlayingTrack(track.id || '');
+      
+      // Start loading animation
+      setLoadingTracks(prev => ({ ...prev, [track.id || '']: 10 }));
+      
+      // Get track stream from YouTube Music
+      const streamData = await getTrackStream({
+        spotifyId: track.id || '',
+        title: track.title || track.name || 'Unknown Title',
+        artist: track.artist || 'Unknown Artist',
+        album: track.album || 'Unknown Album'
+      });
+      
+      // Update loading: processing stream
+      setLoadingTracks(prev => ({ ...prev, [track.id || '']: 70 }));
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      if (streamData && streamData.streamUrl) {
+        // Update loading: preparing to play
+        setLoadingTracks(prev => ({ ...prev, [track.id || '']: 90 }));
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        // Complete loading bar first
+        setLoadingTracks(prev => ({ ...prev, [track.id || '']: 100 }));
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        // Convert to player Track format
+        const playerTrack = {
+          id: track.id || '',
+          title: track.title || track.name || 'Unknown Title',
+          artist: track.artist || 'Unknown Artist',
+          album: track.album || 'Unknown Album',
+          albumArt: track.image || track.albumArt || '',
+          duration: track.duration || 0,
+          url: streamData.streamUrl,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        
+        // Start playback
+        await playTrack(playerTrack);
+        
+        // Clear loading state after playback starts
+        setTimeout(() => {
+          setLoadingTracks(prev => {
+            const newState = { ...prev };
+            delete newState[track.id || ''];
+            return newState;
+          });
+        }, 500);
+      } else {
+        alert('Sorry, this track is not available for playback.');
+        setLoadingTracks(prev => {
+          const newState = { ...prev };
+          delete newState[track.id || ''];
+          return newState;
+        });
+      }
+    } catch (error) {
+      setLoadingTracks(prev => {
+        const newState = { ...prev };
+        delete newState[track.id || ''];
+        return newState;
+      });
+    } finally {
+      setPlayingTrack(null);
+    }
+  };
 
   // 🚀 PERFORMANCE BOOST: Single bulk API call instead of 16+ individual calls!
   // This reduces HTTP requests from 16+ to 1 for massive speed improvement
@@ -181,7 +320,12 @@ export function SpotifyHomepage() {
                           />
                           <Button 
                             size="icon" 
-                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-green-500 hover:bg-green-600 text-black"
+                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-[#00BFFF] hover:bg-[#00BFFF]/90 text-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayTrack(track);
+                            }}
+                            disabled={playingTrack === track.id || loadingTracks[track.id || ''] !== undefined}
                           >
                             <Play className="h-3 w-3 fill-current" />
                           </Button>
@@ -220,7 +364,12 @@ export function SpotifyHomepage() {
                             />
                             <Button 
                               size="icon" 
-                              className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-green-500 hover:bg-green-600 text-black"
+                              className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-[#00BFFF] hover:bg-[#00BFFF]/90 text-white"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handlePlayTrack(track);
+                              }}
+                              disabled={playingTrack === track.id || loadingTracks[track.id || ''] !== undefined}
                             >
                               <Play className="h-3 w-3 fill-current" />
                             </Button>
@@ -256,7 +405,12 @@ export function SpotifyHomepage() {
                           />
                           <Button 
                             size="icon" 
-                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-green-500 hover:bg-green-600 text-black"
+                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-[#00BFFF] hover:bg-[#00BFFF]/90 text-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayTrack(podcast);
+                            }}
+                            disabled={playingTrack === podcast.id || loadingTracks[podcast.id || ''] !== undefined}
                           >
                             <Play className="h-3 w-3 fill-current" />
                           </Button>
@@ -278,7 +432,15 @@ export function SpotifyHomepage() {
               <div className="overflow-x-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                 <div className="flex space-x-4 pb-4">
                   {Array.isArray(trendingAlbums) && trendingAlbums.length > 0 ? trendingAlbums.slice(0, 20).map((album: Track, index: number) => (
-                    <Card key={index} className="group cursor-pointer hover:bg-accent/50 transition-colors active:scale-95 flex-shrink-0 w-40">
+                    <Card 
+                      key={index} 
+                      className="group cursor-pointer hover:bg-accent/50 transition-colors active:scale-95 flex-shrink-0 w-40"
+                      onClick={() => {
+                        if (album.id) {
+                          router.push(`/album/${album.id}`)
+                        }
+                      }}
+                    >
                       <CardContent className="p-3">
                         <div className="relative">
                           <OptimizedImage 
@@ -290,7 +452,12 @@ export function SpotifyHomepage() {
                           />
                           <Button 
                             size="icon" 
-                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-green-500 hover:bg-green-600 text-black"
+                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-[#00BFFF] hover:bg-[#00BFFF]/90 text-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayTrack(album);
+                            }}
+                            disabled={playingTrack === album.id || loadingTracks[album.id || ''] !== undefined}
                           >
                             <Play className="h-3 w-3 fill-current" />
                           </Button>
@@ -312,7 +479,15 @@ export function SpotifyHomepage() {
               <div className="overflow-x-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                 <div className="flex space-x-4 pb-4">
                   {Array.isArray(trendingArtists) && trendingArtists.length > 0 ? trendingArtists.slice(0, 30).map((artist: any, index: number) => (
-                    <Card key={index} className="group cursor-pointer hover:bg-accent/50 transition-colors active:scale-95 flex-shrink-0 w-40">
+                    <Card 
+                      key={index} 
+                      className="group cursor-pointer hover:bg-accent/50 transition-colors active:scale-95 flex-shrink-0 w-40"
+                      onClick={() => {
+                        if (artist.id) {
+                          router.push(`/artist/${artist.id}`)
+                        }
+                      }}
+                    >
                       <CardContent className="p-3">
                         <div className="relative">
                           <OptimizedImage 
@@ -325,7 +500,20 @@ export function SpotifyHomepage() {
                           />
                           <Button 
                             size="icon" 
-                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-green-500 hover:bg-green-600 text-black"
+                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-[#00BFFF] hover:bg-[#00BFFF]/90 text-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // For artists, we'll create a track object with artist info
+                              const artistTrack = {
+                                id: artist.id || artist.name,
+                                title: `${artist.name} - Top Track`,
+                                name: `${artist.name} - Top Track`,
+                                artist: artist.name,
+                                image: artist.image
+                              };
+                              handlePlayTrack(artistTrack);
+                            }}
+                            disabled={playingTrack === artist.id || loadingTracks[artist.id || ''] !== undefined}
                           >
                             <Play className="h-3 w-3 fill-current" />
                           </Button>
@@ -362,7 +550,15 @@ export function SpotifyHomepage() {
                             fallbackChar={(track.title || track.name || 'T').charAt(0)}
                             priority={index < 4}
                           />
-                          <Button size="icon" className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-green-500 hover:bg-green-600 text-black">
+                          <Button 
+                            size="icon" 
+                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-[#00BFFF] hover:bg-[#00BFFF]/90 text-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayTrack(track);
+                            }}
+                            disabled={playingTrack === track.id || loadingTracks[track.id || ''] !== undefined}
+                          >
                             <Play className="h-3 w-3 fill-current" />
                           </Button>
                         </div>
@@ -393,7 +589,15 @@ export function SpotifyHomepage() {
                             fallbackChar={(track.title || track.name || 'T').charAt(0)}
                             priority={index < 4}
                           />
-                          <Button size="icon" className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-green-500 hover:bg-green-600 text-black">
+                          <Button 
+                            size="icon" 
+                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-[#00BFFF] hover:bg-[#00BFFF]/90 text-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayTrack(track);
+                            }}
+                            disabled={playingTrack === track.id || loadingTracks[track.id || ''] !== undefined}
+                          >
                             <Play className="h-3 w-3 fill-current" />
                           </Button>
                         </div>
@@ -424,7 +628,15 @@ export function SpotifyHomepage() {
                             fallbackChar={(track.title || track.name || 'T').charAt(0)}
                             priority={index < 4}
                           />
-                          <Button size="icon" className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-green-500 hover:bg-green-600 text-black">
+                          <Button 
+                            size="icon" 
+                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-[#00BFFF] hover:bg-[#00BFFF]/90 text-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayTrack(track);
+                            }}
+                            disabled={playingTrack === track.id || loadingTracks[track.id || ''] !== undefined}
+                          >
                             <Play className="h-3 w-3 fill-current" />
                           </Button>
                         </div>
@@ -455,7 +667,15 @@ export function SpotifyHomepage() {
                             fallbackChar={(track.title || track.name || 'T').charAt(0)}
                             priority={index < 4}
                           />
-                          <Button size="icon" className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-green-500 hover:bg-green-600 text-black">
+                          <Button 
+                            size="icon" 
+                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-[#00BFFF] hover:bg-[#00BFFF]/90 text-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayTrack(track);
+                            }}
+                            disabled={playingTrack === track.id || loadingTracks[track.id || ''] !== undefined}
+                          >
                             <Play className="h-3 w-3 fill-current" />
                           </Button>
                         </div>
@@ -486,7 +706,15 @@ export function SpotifyHomepage() {
                             fallbackChar={(track.title || track.name || 'T').charAt(0)}
                             priority={index < 4}
                           />
-                          <Button size="icon" className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-green-500 hover:bg-green-600 text-black">
+                          <Button 
+                            size="icon" 
+                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-[#00BFFF] hover:bg-[#00BFFF]/90 text-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayTrack(track);
+                            }}
+                            disabled={playingTrack === track.id || loadingTracks[track.id || ''] !== undefined}
+                          >
                             <Play className="h-3 w-3 fill-current" />
                           </Button>
                         </div>
@@ -517,7 +745,15 @@ export function SpotifyHomepage() {
                             fallbackChar={(track.title || track.name || 'T').charAt(0)}
                             priority={index < 4}
                           />
-                          <Button size="icon" className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-green-500 hover:bg-green-600 text-black">
+                          <Button 
+                            size="icon" 
+                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-[#00BFFF] hover:bg-[#00BFFF]/90 text-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayTrack(track);
+                            }}
+                            disabled={playingTrack === track.id || loadingTracks[track.id || ''] !== undefined}
+                          >
                             <Play className="h-3 w-3 fill-current" />
                           </Button>
                         </div>
@@ -548,7 +784,15 @@ export function SpotifyHomepage() {
                             fallbackChar={(track.title || track.name || 'T').charAt(0)}
                             priority={index < 4}
                           />
-                          <Button size="icon" className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-green-500 hover:bg-green-600 text-black">
+                          <Button 
+                            size="icon" 
+                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-[#00BFFF] hover:bg-[#00BFFF]/90 text-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayTrack(track);
+                            }}
+                            disabled={playingTrack === track.id || loadingTracks[track.id || ''] !== undefined}
+                          >
                             <Play className="h-3 w-3 fill-current" />
                           </Button>
                         </div>
@@ -579,7 +823,15 @@ export function SpotifyHomepage() {
                             fallbackChar={(track.title || track.name || 'T').charAt(0)}
                             priority={index < 4}
                           />
-                          <Button size="icon" className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-green-500 hover:bg-green-600 text-black">
+                          <Button 
+                            size="icon" 
+                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-[#00BFFF] hover:bg-[#00BFFF]/90 text-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayTrack(track);
+                            }}
+                            disabled={playingTrack === track.id || loadingTracks[track.id || ''] !== undefined}
+                          >
                             <Play className="h-3 w-3 fill-current" />
                           </Button>
                         </div>
@@ -610,7 +862,15 @@ export function SpotifyHomepage() {
                             fallbackChar={(track.title || track.name || 'T').charAt(0)}
                             priority={index < 4}
                           />
-                          <Button size="icon" className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-green-500 hover:bg-green-600 text-black">
+                          <Button 
+                            size="icon" 
+                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-[#00BFFF] hover:bg-[#00BFFF]/90 text-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayTrack(track);
+                            }}
+                            disabled={playingTrack === track.id || loadingTracks[track.id || ''] !== undefined}
+                          >
                             <Play className="h-3 w-3 fill-current" />
                           </Button>
                         </div>
@@ -641,7 +901,15 @@ export function SpotifyHomepage() {
                             fallbackChar={(track.title || track.name || 'T').charAt(0)}
                             priority={index < 4}
                           />
-                          <Button size="icon" className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-green-500 hover:bg-green-600 text-black">
+                          <Button 
+                            size="icon" 
+                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-[#00BFFF] hover:bg-[#00BFFF]/90 text-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayTrack(track);
+                            }}
+                            disabled={playingTrack === track.id || loadingTracks[track.id || ''] !== undefined}
+                          >
                             <Play className="h-3 w-3 fill-current" />
                           </Button>
                         </div>
@@ -672,7 +940,15 @@ export function SpotifyHomepage() {
                             fallbackChar={(track.title || track.name || 'T').charAt(0)}
                             priority={index < 4}
                           />
-                          <Button size="icon" className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-green-500 hover:bg-green-600 text-black">
+                          <Button 
+                            size="icon" 
+                            className="absolute bottom-1 right-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 bg-[#00BFFF] hover:bg-[#00BFFF]/90 text-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayTrack(track);
+                            }}
+                            disabled={playingTrack === track.id || loadingTracks[track.id || ''] !== undefined}
+                          >
                             <Play className="h-3 w-3 fill-current" />
                           </Button>
                         </div>
@@ -730,7 +1006,15 @@ export function SpotifyHomepage() {
               <h3 className="text-lg font-semibold mb-4">Popular albums</h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
                 {albums.slice(0, 10).map((album: Track, index: number) => (
-                  <Card key={index} className="group cursor-pointer hover:bg-accent/50 transition-colors active:scale-95">
+                  <Card 
+                    key={index} 
+                    className="group cursor-pointer hover:bg-accent/50 transition-colors active:scale-95"
+                    onClick={() => {
+                      if (album.id) {
+                        router.push(`/album/${album.id}`)
+                      }
+                    }}
+                  >
                     <CardContent className="p-3 sm:p-4">
                       <div className="relative">
                         <OptimizedImage 
@@ -742,9 +1026,14 @@ export function SpotifyHomepage() {
                         />
                         <Button 
                           size="icon" 
-                          className="absolute bottom-1 right-1 sm:bottom-2 sm:right-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 sm:w-10 sm:h-10"
+                          className="absolute bottom-1 right-1 sm:bottom-2 sm:right-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg w-8 h-8 sm:w-10 sm:h-10 bg-[#00BFFF] hover:bg-[#00BFFF]/90 text-white"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePlayTrack(album);
+                          }}
+                          disabled={playingTrack === album.id || loadingTracks[album.id || ''] !== undefined}
                         >
-                          <Play className="h-3 w-3 sm:h-4 sm:w-4" />
+                          <Play className="h-3 w-3 sm:h-4 sm:w-4 fill-current" />
                         </Button>
                       </div>
                       <h4 className="font-medium text-xs sm:text-sm mb-1 truncate leading-tight">{album.name || album.title}</h4>
@@ -764,14 +1053,31 @@ export function SpotifyHomepage() {
 
   return (
     <div className="bg-card/95 backdrop-blur-sm rounded-lg ml-0 mr-1.5 mt-0 mb-2 shadow-lg h-[calc(100vh-120px)] flex flex-col relative">
-      {/* Search Overlay - Shows when user is searching */}
-      {searchQuery && <SearchOverlay />}
+      {/* Global Loading Bar at Top of Page - Only show when loading, not playing */}
+      {Object.keys(loadingTracks).length > 0 && (
+        <div className="fixed top-0 left-0 right-0 h-1 bg-white/10 overflow-hidden z-50">
+          <div
+            className="h-1 bg-blue-500 transition-all duration-500 ease-out"
+            style={{ width: `${Math.max(...Object.values(loadingTracks))}%` }}
+          />
+        </div>
+      )}
+      
+      {/* Discovery Overlay - Shows when search is cleared */}
+      {shouldShowDiscovery && (
+        <div className="absolute inset-0 bg-background/95 backdrop-blur-sm z-40 overflow-auto">
+          <MusicDiscovery 
+            onCategorySelect={handleCategorySelect} 
+            onClose={handleCloseDiscovery}
+          />
+        </div>
+      )}
       
       {/* Profile Overlay - Shows when user navigates to profile */}
       <ProfileOverlay isVisible={showProfile} />
       
-      {/* Homepage Content - Hide when overlays are shown */}
-      {!searchQuery && !showProfile && (
+      {/* Homepage Content - Shows by default, hidden when overlays are active */}
+      {shouldShowHomepage && (
         <SimpleBar className="p-4 sm:p-6 space-y-6 flex-1 rounded-lg" style={{ maxHeight: '100%', height: '100%' }} autoHide={false}>
         {/* Tab Navigation */}
         <div className="flex space-x-2 relative mb-5">

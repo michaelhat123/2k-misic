@@ -1,28 +1,33 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
-// Helper function to safely get auth token (FIXED - correct key)
+// Helper function to safely get auth token (JWT from our backend)
 const getAuthToken = (): string | null => {
   if (typeof window !== "undefined" && window.localStorage) {
-    return localStorage.getItem("firebase_token")  // ✅ FIXED: Use correct token key
+    return localStorage.getItem("auth_token")  // ✅ FIXED: Use JWT token key
   }
   return null
 }
 
-// Helper function to refresh Firebase token
+// Helper function to refresh JWT token via backend
 const refreshAuthToken = async (): Promise<string | null> => {
   if (typeof window === "undefined") return null
   
   try {
-    const { getAuth } = await import('firebase/auth')
-    const auth = getAuth()
-    if (auth.currentUser) {
-      const freshToken = await auth.currentUser.getIdToken(true) // Force refresh
-      localStorage.setItem('firebase_token', freshToken)
-      console.log('✅ Recommendations API: Token refreshed!')
-      return freshToken
+    const currentToken = localStorage.getItem('auth_token')
+    if (!currentToken) return null
+    
+    const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${currentToken}` }
+    })
+    
+    if (response.ok) {
+      const { accessToken } = await response.json()
+      localStorage.setItem('auth_token', accessToken)
+      return accessToken
     }
   } catch (error) {
-    console.error('❌ Recommendations API: Token refresh failed:', error)
+    // Silent fail
   }
   return null
 }
@@ -112,7 +117,6 @@ export const recommendationsApi = {
 
     // If token expired, try to refresh and retry
     if (response.status === 401) {
-      console.log('🔄 Recommendations API: Token expired, refreshing...')
       const freshToken = await refreshAuthToken()
       if (freshToken) {
         // Retry with fresh token
@@ -267,7 +271,6 @@ export const recommendationsApi = {
 
     // If token expired, try to refresh and retry
     if (response.status === 401) {
-      console.log('🔄 Recommendations API: Token expired, refreshing...')
       const freshToken = await refreshAuthToken()
       if (freshToken) {
         // Retry with fresh token

@@ -3,7 +3,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/components/auth/auth-provider";
 import { PlayerProvider } from "@/components/player/player-provider";
+import { GlobalRecentlyPlayedTracker } from "@/components/player/global-recently-played-tracker";
 import { ThemeProvider } from "@/components/theme-provider";
+import { SettingsProvider } from "@/contexts/settings-context";
 import { useState } from "react";
 
 interface ProvidersProps {
@@ -25,9 +27,12 @@ export function Providers({ children }: ProvidersProps) {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
-          <PlayerProvider>
-            {children}
-          </PlayerProvider>
+          <SettingsProvider>
+            <PlayerProvider>
+              <GlobalRecentlyPlayedTracker />
+              {children}
+            </PlayerProvider>
+          </SettingsProvider>
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>

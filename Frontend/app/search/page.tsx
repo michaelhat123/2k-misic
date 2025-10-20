@@ -44,34 +44,16 @@ export default function SearchPage() {
   return (
     <MainLayout>
       <div className="space-y-6">
-        {/* Search Header */}
-        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-          <div className="relative max-w-2xl">
-            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <Input
-              placeholder="Search for songs, artists, albums, playlists..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="pl-12 h-12 text-lg bg-card border-border/50 focus:bg-background"
-            />
-          </div>
-        </motion.div>
-
-        {/* Search Filters */}
-        {query && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.1 }}
-          >
-            <SearchFilters selectedType={searchType} onTypeChange={setSearchType} />
-          </motion.div>
-        )}
-
-        {/* Search Results or Popular Content */}
-        {debouncedQuery ? (
-          <SearchResults results={searchResults} isLoading={isLoading} query={debouncedQuery} type={searchType} />
-        ) : (
+        <SearchResults 
+          results={searchResults} 
+          isLoading={isLoading} 
+          query={debouncedQuery} 
+          type={searchType}
+          searchQuery={query}
+          onSearchQueryChange={setQuery}
+        />
+        
+        {!debouncedQuery && (
           <motion.div
             className="space-y-6"
             initial={{ opacity: 0 }}

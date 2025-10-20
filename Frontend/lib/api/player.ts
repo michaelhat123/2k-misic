@@ -3,7 +3,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 // Helper function to safely get auth token
 const getAuthToken = (): string | null => {
   if (typeof window !== "undefined" && window.localStorage) {
-    return localStorage.getItem("firebase_token")
+    return localStorage.getItem("auth_token")
   }
   return null
 }

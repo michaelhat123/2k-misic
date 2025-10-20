@@ -1,0 +1,22 @@
+{
+  "name": "audio-equalizer-native",
+  "version": "1.0.0",
+  "description": "Native C++ audio equalizer for 2k Music",
+  "main": "build/Release/audio_equalizer.node",
+  "scripts": {
+    "build": "node-gyp rebuild",
+    "build:debug": "node-gyp rebuild --debug",
+    "build:release": "node-gyp rebuild --release",
+    "clean": "node-gyp clean",
+    "configure": "node-gyp configure",
+    "test": "node test/test.js",
+    "rebuild": "npm run clean && npm run build"
+  },
+  "gypfile": true,
+  "dependencies": {
+    "node-addon-api": "^7.0.0"
+  },
+  "devDependencies": {
+    "node-gyp": "^10.0.0"
+  }
+}

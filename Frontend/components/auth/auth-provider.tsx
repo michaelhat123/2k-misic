@@ -3,20 +3,23 @@
 import type React from "react"
 import { createContext, useContext, useEffect, useState, useMemo } from 'react'
 import { User } from '@/types/user'
-import { auth } from '@/lib/firebase'
-import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth'
-import { userApi } from '@/lib/api/user'
-import { socketService } from '@/lib/socket'
 import { authApi } from "@/lib/api/auth"
 import { useQueryClient } from '@tanstack/react-query'
+import { socketService } from "@/lib/socket"
 
 interface AuthContextType {
   user: User | null
   loading: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
-  register: (email: string, password: string, name: string) => Promise<void>
-  googleSignIn: () => Promise<void>
+  // Returns backend signup payload { message, userId, email }
+  register: (email: string, password: string, name: string) => Promise<{ message: string; userId: string; email: string }>
+  // OTP helpers
+  sendOtp: (email: string, type?: 'verification' | 'password_reset') => Promise<any>
+  resendOtp: (email: string, type?: 'verification' | 'password_reset') => Promise<any>
+  verifyOtp: (email: string, otpCode: string, type?: 'verification' | 'password_reset') => Promise<any>
+  resetPassword: (email: string, code: string, newPassword: string) => Promise<any>
+  googleSignIn: (redirectTo?: string) => void
   refreshProfile: () => Promise<void>
 }
 
@@ -25,280 +28,293 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
-  const [redirectLoading, setRedirectLoading] = useState(false);
   const queryClient = useQueryClient()
 
-  // 🚀 OLD CUSTOM EVENT LISTENERS REMOVED - USING SOCKET.IO NOW!
-
+  // Check for existing auth token on mount
   useEffect(() => {
-    console.log('🔥 AuthProvider: Setting up Firebase auth state listener...')
-    
-    // Listen to Firebase auth state changes
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
-      console.log('🔥 AuthProvider: Auth state changed', { 
-        hasUser: !!firebaseUser, 
-        uid: firebaseUser?.uid,
-        email: firebaseUser?.email,
-        emailVerified: firebaseUser?.emailVerified 
-      })
-      
+    const initAuth = async () => {
       try {
-        if (firebaseUser) {
-          console.log('👤 User is signed in, processing authentication...')
+        // Check if we should show branded loader (user just returned from OAuth)
+        const showLoader = localStorage.getItem('show_auth_loader');
+        if (showLoader === 'true') {
+          localStorage.removeItem('show_auth_loader');
           
-          // Get fresh ID token and store it
-          try {
-            const idToken = await firebaseUser.getIdToken(false) // Use cached token first
-            console.log('✅ Firebase ID token obtained:', idToken.substring(0, 50) + '...')
-            
-            // Store token in localStorage for API requests
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('firebase_token', idToken)
-              console.log('✅ Token stored in localStorage')
-            }
-            
-            // Try to get additional user data from backend
+          // Keep loading state for 1 second to show branded loader
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        
+        // Check for auth params in URL (from callback redirect)
+        const urlParams = new URLSearchParams(window.location.search);
+        const authCode = urlParams.get('auth_code');
+        const authState = urlParams.get('auth_state');
+        const oauthSuccess = urlParams.get('oauth_success');
+        
+        // Handle OAuth success redirect from external browser
+        if (oauthSuccess === 'true') {
+          // Check for tokens in localStorage
+          const token = localStorage.getItem('auth_token');
+          if (token) {
             try {
-              console.log('🔗 Attempting to get profile from backend...')
-              // 🚀 CRITICAL FIX: Use working /users/profile endpoint instead of broken /auth/profile
-              const { userApi } = await import('@/lib/api/user')
-              const profileData = await userApi.getProfile() as any
-              console.log('✅ Profile data from backend:', profileData)
-              console.log('🖼️ PROFILE PICTURE DEBUG:', {
-                backend_profile_picture: profileData.profile_picture,
-                backend_picture_property: profileData.picture,
-                profileData_keys: Object.keys(profileData || {}),
-                firebase_photoURL: firebaseUser.photoURL,
-                will_use: profileData.profile_picture || profileData.picture || firebaseUser.photoURL || '(none)',
-                profileData_full: profileData
-              })
-              
-              const userProfile = {
-                uid: firebaseUser.uid,
-                email: firebaseUser.email!,
-                name: profileData.display_name || profileData.name || firebaseUser.displayName || '',
-                picture: profileData.profile_picture || firebaseUser.photoURL || '',
-                emailVerified: profileData.emailVerified,
+              const profile = await authApi.getProfile();
+              if (profile) {
+                setUser(profile);
+                
+                // Dispatch success event
+                window.dispatchEvent(new CustomEvent('googleSignInSuccess', { 
+                  detail: { user: profile, token } 
+                }));
+                
+                // Clean up URL
+                window.history.replaceState({}, '', window.location.pathname);
               }
-              
-              setUser(userProfile)
-              console.log('✅ User state set from backend profile:', userProfile)
-              console.log('🖼️ FINAL USER PICTURE:', userProfile.picture)
-              
-              // 🚀 CONNECT SOCKET.IO FOR REAL-TIME UPDATES
-              console.log('🔌 SOCKET.IO: Connecting for user:', userProfile.uid)
-              socketService.connect(userProfile.uid)
-              
-              // 🚀 LISTEN FOR REAL-TIME PROFILE PICTURE UPDATES
-              socketService.onProfilePictureUpdate((data) => {
-                console.log('🚀 SOCKET.IO: Profile picture update received:', data)
-                if (data.uid === userProfile.uid) {
-                  console.log('⚡ UPDATING AUTH CONTEXT: New picture:', data.profile_picture)
-                  
-                  // Update auth context
-                  setUser(prev => {
-                    const updated = prev ? { ...prev, picture: data.profile_picture } : null
-                    console.log('✅ AUTH CONTEXT UPDATED:', updated)
-                    return updated
-                  })
-                  
-                  // 🚀 FORCE REACT QUERY CACHE UPDATE (NO INVALIDATION TO PRESERVE OTHER UPDATES)
-                  queryClient.setQueryData(["user-profile"], (oldData: any) => ({
-                    ...oldData,
-                    profile_picture: data.profile_picture
-                  }))
-                  // ⚠️ REMOVED: queryClient.invalidateQueries - this was overwriting successful profile name updates!
-                  console.log('⚡ REACT QUERY CACHE UPDATED (PRESERVING DISPLAY NAME UPDATES)')
-                  
-                } else {
-                  console.log('⚠️ SOCKET.IO: Update for different user, ignoring')
-                }
-              })
-              
-              // 🚀 LISTEN FOR REAL-TIME PROFILE UPDATES
-              socketService.onProfileUpdate((data) => {
-                console.log('🚀 SOCKET.IO: Profile update received:', data)
-                if (data.uid === userProfile.uid) {
-                  console.log('⚡ UPDATING AUTH CONTEXT: New profile:', data.profile)
-                  setUser(prev => {
-                    const updated = prev ? { ...prev, ...data.profile } : null
-                    console.log('✅ AUTH CONTEXT UPDATED:', updated)
-                    return updated
-                  })
-                }
-              })
-              
-              // 🚀 CRITICAL: Set loading to false after successful profile setup
-              setLoading(false)
-              console.log('✅ Auth loading complete - Socket.IO connected!')
-              
-            } catch (profileError: any) {
-              console.warn('⚠️ Failed to get backend profile, using Firebase data:', profileError.message)
-              
-              // Fallback to Firebase user data
-              setUser({
-                uid: firebaseUser.uid,
-                email: firebaseUser.email!,
-                name: firebaseUser.displayName || '',
-                picture: firebaseUser.photoURL || '',
-                emailVerified: firebaseUser.emailVerified,
-              })
-              console.log('✅ User state set from Firebase data (fallback)')
-              
-              // 🚀 CRITICAL: Set loading to false after fallback setup
-              setLoading(false)
-              console.log('✅ Auth loading complete (fallback mode)')
+            } catch (error) {
+              // Silent fail
             }
-          } catch (tokenError: any) {
-            console.error('❌ Failed to get Firebase token:', tokenError.message)
-            // If we can't get token, user should be logged out
-            setUser(null)
-            if (typeof window !== 'undefined') {
-              localStorage.removeItem('firebase_token')
+          }
+          
+          setLoading(false);
+          return;
+        }
+        
+        if (authCode && authState) {
+          try {
+            // Process the auth code
+            const result = await authApi.handleGoogleRedirect();
+            
+            if (result && result.user) {
+              setUser(result.user);
+              
+              // Dispatch success event for auth-modal to detect
+              window.dispatchEvent(new CustomEvent('googleSignInSuccess', { 
+                detail: { user: result.user, token: result.token } 
+              }));
             }
+            
+            // Clean up URL params
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, '', newUrl);
+          } catch (error) {
+            // Silent fail
           }
         } else {
-          console.log('User is signed out')
-          setUser(null)
-          setLoading(false) // 🔥 CRITICAL FIX: Set loading to false when signed out
-          
-          // Disconnect Socket.IO on logout
-          console.log('SOCKET.IO disconnected on logout')
-          socketService.disconnect()
-          
-          // Clear token from localStorage
-          if (typeof window !== 'undefined') {
-            localStorage.removeItem('firebase_token')
-            console.log('Token removed from localStorage')
+          // Skip auth validation if we're on auth pages (signup/login/verify)
+          const isAuthPage = typeof window !== 'undefined' && window.location.pathname.startsWith('/auth');
+          if (isAuthPage) {
+            setLoading(false);
+            return;
           }
-          
-          // Check if this was an unexpected logout (token expired)
-          const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/'
-          if (currentPath !== '/' && typeof window !== 'undefined') {
-            console.log('Unexpected logout detected, token may have expired')
-            // The MainLayout will automatically show AuthModal when user becomes null
+
+          // Check if user has a valid token
+          const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+          if (token) {
+            // Try to get user profile
+            try {
+              const profile = await authApi.getProfile();
+              if (profile) {
+                setUser(profile);
+              } else {
+                // Invalid token, clear it
+                localStorage.removeItem('auth_token');
+                localStorage.removeItem('refresh_token');
+              }
+            } catch (error) {
+              // Clear invalid tokens
+              localStorage.removeItem('auth_token');
+              localStorage.removeItem('refresh_token');
+            }
           }
         }
-      } catch (error: any) {
-        console.error('Error in auth state change handler:', error.message)
-        setUser(null)
-        setLoading(false)
+      } catch (error) {
+        // Clear any invalid tokens on error
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('auth_token');
+          localStorage.removeItem('refresh_token');
+        }
+      } finally {
+        setLoading(false);
       }
-    })
+    };
+
+    // Add a small delay to ensure DOM is ready
+    const timer = setTimeout(initAuth, 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Handle Google Sign-In events
+  useEffect(() => {
+    const handleGoogleSuccess = (event: CustomEvent) => {
+      setUser(event.detail.user);
+    };
+
+    const handleGoogleError = (event: CustomEvent) => {
+      // Silent fail
+    };
+
+    // Listen for custom Google Sign-In events
+    window.addEventListener('googleSignInSuccess', handleGoogleSuccess as EventListener);
+    window.addEventListener('googleSignInError', handleGoogleError as EventListener);
+
+    // Listen for Electron OAuth callbacks
+    if (typeof window !== 'undefined' && (window as any).electron?.onOAuthCallback) {
+      (window as any).electron.onOAuthCallback(async (data: { code: string; state: string }) => {
+        try {
+          const result = await authApi.handleGoogleRedirect();
+          if (result && result.user) {
+            setUser(result.user);
+            window.dispatchEvent(new CustomEvent('googleSignInSuccess', { 
+              detail: { user: result.user, token: result.token } 
+            }));
+          }
+        } catch (error) {
+          window.dispatchEvent(new CustomEvent('googleSignInError', { 
+            detail: { error: (error as Error).message } 
+          }));
+        }
+      });
+    }
 
     return () => {
-      console.log('🔥 AuthProvider: Cleaning up auth state listener')
-      unsubscribe()
-    }
-  }, [])
+      window.removeEventListener('googleSignInSuccess', handleGoogleSuccess as EventListener);
+      window.removeEventListener('googleSignInError', handleGoogleError as EventListener);
+    };
+  }, []);
 
   const login = async (email: string, password: string) => {
-    console.log('🔐 AuthProvider: Starting login...', { email })
-    
     try {
-      const result = await authApi.login(email, password)
-      setRedirectLoading(true); // Show loading overlay immediately after success
-      // User state will be updated by the Firebase auth state listener
-      // No need to manually set user here
+      const result = await authApi.login(email, password);
+      setUser(result.user);
+      setLoading(false); // Ensure loading is false after successful login
     } catch (error: any) {
-      console.error('❌ Login failed:', error.message)
-      // Ensure user is cleared on login failure
-      setUser(null)
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('firebase_token')
+      // Don't clear user state if it's a verification error - let the auth modal handle redirect
+      const isVerificationError = typeof error?.message === 'string' && error.message.toLowerCase().includes('verify');
+      if (!isVerificationError) {
+        setUser(null);
+        setLoading(false); // Ensure loading is false on non-verification errors
       }
-      throw error
-    }
-  }
-
-  const logout = async () => {
-    console.log('🔐 AuthProvider: Starting logout...')
-    
-    try {
-      await authApi.logout()
-      console.log('✅ Logout successful')
       
-      // User state will be updated by the Firebase auth state listener
-      // No need to manually set user here
-    } catch (error: any) {
-      console.error('❌ Logout failed:', error.message)
-      throw error
+      throw error;
     }
   }
 
   const register = async (email: string, password: string, name: string) => {
-    console.log('🔐 AuthProvider: Starting registration...', { email, name })
-    
     try {
-      const result = await authApi.register(email, password, name)
-      setRedirectLoading(true); // Show loading overlay immediately after success
-      // User state will be updated by the Firebase auth state listener
-      // No need to manually set user here
+      // Backend returns { message, userId, email }
+      const result = await authApi.register(email, password, name);
+      // Do NOT set user here; account is unverified and no token is issued.
+      return result;
     } catch (error: any) {
-      console.error('❌ Registration failed:', error.message)
-      // Ensure user is cleared on registration failure
-      setUser(null)
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('firebase_token')
-      }
-      throw error
+      // Do not alter user state on signup failures
+      throw error;
     }
   }
 
-  const googleSignIn = async () => {
-    console.log('🔐 AuthProvider: Starting Google sign-in...')
-    
+  const googleSignIn = (redirectTo?: string) => {
+    authApi.startGoogleSignIn(redirectTo);
+  }
+
+  // OTP helpers
+  const sendOtp = async (email: string, type: 'verification' | 'password_reset' = 'verification') => {
+    return authApi.sendOtp(email, type)
+  }
+
+  const resendOtp = async (email: string, type: 'verification' | 'password_reset' = 'verification') => {
+    return authApi.resendOtp(email, type)
+  }
+
+  const verifyOtp = async (email: string, otpCode: string, type: 'verification' | 'password_reset' = 'verification') => {
+    return authApi.verifyOtp(email, otpCode, type)
+  }
+
+  const resetPassword = async (email: string, code: string, newPassword: string) => {
+    return authApi.resetPassword(email, code, newPassword)
+  }
+
+  const logout = async () => {
     try {
-      const result = await authApi.googleSignIn()
-      console.log('✅ Google sign-in successful:', result.user)
-      
-      // User state will be updated by the Firebase auth state listener
-      // No need to manually set user here
+      // 1. Call backend logout (invalidates tokens on server)
+      await authApi.logout();
     } catch (error: any) {
-      console.error('❌ Google sign-in failed:', error.message)
-      // Ensure user is cleared on Google sign-in failure
-      setUser(null)
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('firebase_token')
-      }
-      throw error
+      // Continue with frontend cleanup even if backend fails
+    }
+    
+    // 2. Stop any playing music and clear player state
+    if (typeof window !== 'undefined') {
+      // Dispatch event to stop player
+      window.dispatchEvent(new CustomEvent('forceStopPlayer'));
+    }
+    
+    // 3. Clear user state immediately
+    setUser(null);
+    setLoading(false); // Ensure auth modal shows immediately
+    
+    // 4. Clear all React Query cache (removes all cached API data)
+    queryClient.clear();
+    
+    // 5. Clear all localStorage data (comprehensive cleanup)
+    if (typeof window !== 'undefined') {
+      // Auth tokens
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('refresh_token');
+      
+      // User data and settings
+      localStorage.removeItem('user_profile');
+      localStorage.removeItem('user_settings');
+      
+      // Music data
+      localStorage.removeItem('2k-music-recent-songs');
+      localStorage.removeItem('watchedMusicFolder');
+      localStorage.removeItem('watchedFolderTracks');
+      
+      // Auth flow data
+      localStorage.removeItem('pending_signup_email');
+      localStorage.removeItem('pending_signup_password');
+      localStorage.removeItem('pending_login_password');
+      
+      // Session storage cleanup
+      sessionStorage.removeItem('pending_signup_email');
+      sessionStorage.removeItem('pending_signup_password');
+      sessionStorage.removeItem('pending_login_password');
+      sessionStorage.removeItem('oauth_state');
+      sessionStorage.removeItem('redirect_after_login');
     }
   }
 
   const refreshProfile = async () => {
-    console.log('🔄 FORCE refreshing user profile for INSTANT update...')
     try {
-      const firebaseUser = auth.currentUser
-      if (firebaseUser) {
-        // CRITICAL: Force fresh API call with no cache
-        const profileData = await authApi.getProfile() as any
-        console.log('🚀 INSTANT refresh profile data:', {
-          profile_picture: profileData.profile_picture,
-          display_name: profileData.display_name
-        })
-        
-        // INSTANT update - no delays!
-        const newUserData = {
-          uid: profileData.uid,
-          email: profileData.email,
-          name: profileData.display_name || profileData.name || firebaseUser.displayName || '',
-          picture: profileData.profile_picture || firebaseUser.photoURL || '',
-          emailVerified: profileData.emailVerified,
-        }
-        
-        setUser(newUserData)
-        
-        console.log('🚀 INSTANT top navbar update complete:', {
-          oldPicture: user?.picture,
-          newPicture: newUserData.picture,
-          oldName: user?.name,
-          newName: newUserData.name
-        })
-      }
-    } catch (error: any) {
-      console.error('❌ Failed to refresh profile:', error.message)
+      const profile = await authApi.getProfile();
+      setUser(profile);
+    } catch (error) {
+      // Silent fail
     }
   }
+
+  // SOCKET.IO REAL-TIME PROFILE UPDATES
+  useEffect(() => {
+    if (user?.id) {
+      // Connect to Socket.IO
+      socketService.connect(user.id)
+      
+      // Listen for profile picture updates
+      socketService.onProfilePictureUpdate((data) => {
+        // Update the user state globally
+        setUser(prevUser => {
+          if (prevUser) {
+            const updatedUser: User = {
+              ...prevUser,
+              profilePicture: data.profile_picture === null ? undefined : data.profile_picture
+            }
+            return updatedUser
+          }
+          return prevUser
+        })
+      })
+      
+      // Cleanup on unmount or user change
+      return () => {
+        socketService.removeAllListeners()
+      }
+    }
+  }, [user?.id])
 
   const contextValue = useMemo(() => ({
     user,
@@ -306,17 +322,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     login,
     logout,
     register,
+    sendOtp,
+    resendOtp,
+    verifyOtp,
+    resetPassword,
     googleSignIn,
     refreshProfile,
-  }), [user, loading, login, logout, register, googleSignIn, refreshProfile])
-
-  console.log('🔥 AuthProvider: Rendering with state', { 
-    hasUser: !!user, 
-    loading, 
-    userEmail: user?.email,
-    hasFirebaseAuth: !!auth,
-    hasToken: typeof window !== 'undefined' ? !!localStorage.getItem('firebase_token') : false
-  })
+  }), [user, loading]);
 
   return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>
 }

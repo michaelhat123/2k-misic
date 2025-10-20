@@ -124,6 +124,46 @@
   scrollbar-color: rgba(0, 191, 255, 0.3) transparent;
 }
 
+/* Create Playlist Modal: NPV-style custom scrollbar (no arrows) */
+.playlist-scroll {
+  /* IE/Edge legacy */
+  -ms-overflow-style: none;
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 191, 255, 0.3) transparent;
+}
+
+.playlist-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  background: transparent;
+}
+
+.playlist-scroll::-webkit-scrollbar-button {
+  display: none !important;
+  height: 0 !important;
+  width: 0 !important;
+}
+
+.playlist-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 8px;
+  margin: 6px 0; /* hides triangle areas on some platforms */
+}
+
+.playlist-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0, 191, 255, 0.3);
+  border-radius: 8px;
+  border: 2px solid transparent; /* improves shape on Windows */
+  background-clip: content-box;
+  min-height: 20px;
+}
+
+.playlist-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 191, 255, 0.6);
+  background-clip: content-box;
+}
+
 /* Homepage scrollbar - comprehensive triangle elimination */
 .homepage-scroll {
   overflow: -moz-scrollbars-none; /* Firefox */
@@ -236,4 +276,122 @@
   border-bottom-left-radius: 9999px !important;
   border-top-right-radius: 9999px !important;
   border-bottom-right-radius: 9999px !important;
+}
+
+/* Radix UI ScrollArea - Remove arrows and match homepage style */
+[data-radix-scroll-area-viewport] {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 191, 255, 0.7) transparent;
+}
+
+[data-radix-scroll-area-viewport]::-webkit-scrollbar {
+  width: 8px;
+  background: transparent;
+}
+
+[data-radix-scroll-area-viewport]::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 4px;
+}
+
+[data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb {
+  background: rgba(0, 191, 255, 0.7);
+  border-radius: 4px;
+  border: none;
+}
+
+[data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 191, 255, 0.9);
+}
+
+/* CRITICAL: Remove scrollbar arrows from Radix ScrollArea */
+[data-radix-scroll-area-viewport]::-webkit-scrollbar-button {
+  display: none !important;
+  height: 0 !important;
+  width: 0 !important;
+}
+
+/* Show scrollbar only on hover for containers using `hover-scroll` */
+.hover-scroll [data-radix-scroll-area-viewport] {
+  scrollbar-width: none; /* Firefox: hide */
+}
+
+.hover-scroll:hover [data-radix-scroll-area-viewport] {
+  scrollbar-width: thin; /* Firefox: show on hover */
+  scrollbar-color: rgba(0, 191, 255, 0.7) transparent;
+}
+
+.hover-scroll [data-radix-scroll-area-viewport]::-webkit-scrollbar {
+  width: 0px; /* WebKit: hide */
+  height: 0px;
+  background: transparent;
+}
+
+.hover-scroll:hover [data-radix-scroll-area-viewport]::-webkit-scrollbar {
+  width: 8px; /* WebKit: show on hover */
+  height: 8px;
+}
+
+.hover-scroll:hover [data-radix-scroll-area-viewport]::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 4px;
+}
+
+.hover-scroll:hover [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb {
+  background: rgba(0, 191, 255, 0.7);
+  border-radius: 4px;
+}
+
+.hover-scroll:hover [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 191, 255, 0.9);
+}
+
+/* Avoid double scrollbars: hide Radix's custom Scrollbar parts inside these containers */
+.hover-scroll [data-radix-scroll-area-scrollbar],
+.homepage-scroll [data-radix-scroll-area-scrollbar] {
+  display: none !important;
+}
+
+/* Utility: completely hide scrollbars inside Radix ScrollArea */
+.hide-scrollbar [data-radix-scroll-area-viewport] {
+  scrollbar-width: none; /* Firefox */
+}
+.hide-scrollbar [data-radix-scroll-area-viewport]::-webkit-scrollbar {
+  width: 0px;
+  height: 0px;
+}
+.hide-scrollbar [data-radix-scroll-area-scrollbar] {
+  display: none !important; /* Hide Radix custom bars too */
+}
+
+/* Custom scrollbar for biography card */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+  border: none;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.custom-scrollbar::-webkit-scrollbar-button {
+  display: none !important;
+  height: 0 !important;
+  width: 0 !important;
 }

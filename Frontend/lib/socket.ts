@@ -43,7 +43,7 @@ class SocketService {
     });
 
     this.socket.on('connect_error', (error) => {
-      console.error('❌ Socket.IO connection error:', error);
+      // Silent fail
     });
 
     return this.socket;
@@ -51,7 +51,6 @@ class SocketService {
 
   disconnect() {
     if (this.socket) {
-      console.log('🔌 Disconnecting Socket.IO client');
       this.socket.disconnect();
       this.socket = null;
       this.isConnected = false;
@@ -60,27 +59,23 @@ class SocketService {
   }
 
   // 🚀 LISTEN FOR REAL-TIME PROFILE PICTURE UPDATES
-  onProfilePictureUpdate(callback: (data: { uid: string; profile_picture: string; timestamp: string }) => void) {
+  onProfilePictureUpdate(callback: (data: { uid: string; profile_picture: string | null; timestamp: string }) => void) {
     if (!this.socket) {
-      console.error('❌ Socket not connected - cannot listen for profile picture updates');
       return;
     }
 
     this.socket.on('profile_picture_updated', (data) => {
-      console.log('🚀 REAL-TIME: Profile picture updated:', data);
       callback(data);
     });
   }
 
   // 🚀 LISTEN FOR REAL-TIME PROFILE UPDATES
-  onProfileUpdate(callback: (data: { uid: string; profile: any; timestamp: string }) => void) {
+  onProfileUpdate(callback: (data: { id: string; profile: any; timestamp: string }) => void) {
     if (!this.socket) {
-      console.error('❌ Socket not connected - cannot listen for profile updates');
       return;
     }
 
     this.socket.on('profile_updated', (data) => {
-      console.log('🚀 REAL-TIME: Profile updated:', data);
       callback(data);
     });
   }

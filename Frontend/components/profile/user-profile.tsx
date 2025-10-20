@@ -18,19 +18,33 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { SearchOverlay } from "../search/search-overlay"
 import { useSearch } from "../layout/top-navigation"
 import { userApi } from "@/lib/api/user"
-import { GradientDotLoader } from "@/components/ui/GradientDotLoader"
+import { BrandedLoader } from "../ui/BrandedLoader"
 
 interface UserProfile {
-  uid: string
+  id: string
   email: string
-  display_name: string | null
-  profile_picture: string | null
-  preferences: {
+  name: string
+  profilePicture: string | null
+  isVerified: boolean
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+  lastLoginAt: string | null
+  preferences?: {
     theme: string
     notifications: boolean
+    privacy: {
+      profile_visibility: string
+      show_listening_activity: boolean
+    }
   }
-  created_at: string
-  updated_at: string
+  stats?: {
+    total_listening_time: number
+    favorite_genres: string[]
+    playlists_count: number
+    followers_count: number
+    following_count: number
+  }
 }
 
 export function UserProfile() {
@@ -50,36 +64,49 @@ export function UserProfile() {
     queryFn: userApi.getProfile,
     staleTime: 1000 * 60 * 5, // 5 minutes
     retry: 2,
+    enabled: !!user, // Only run when user is authenticated
   })
   
   // Debug profile data
   useEffect(() => {
-    console.log('🔍 Profile data changed:', {
-      profile_picture: profile?.profile_picture,
-      display_name: profile?.display_name,
-      isLoading,
-      error
-    })
+    // Silent monitoring
   }, [profile, isLoading, error])
 
   // Update local state when profile data loads
   useEffect(() => {
     if (profile) {
-      setDisplayName(profile.display_name || "")
-      setDialogDisplayName(profile.display_name || "")
+      setDisplayName(profile.name || "")
+      setDialogDisplayName(profile.name || "")
       setNotifications(profile.preferences?.notifications ?? true)
     }
   }, [profile])
 
+  // 🚀 SYNC WITH AUTH PROVIDER'S SOCKET.IO UPDATES
+  useEffect(() => {
+    if (user) {
+      // Update React Query cache when auth provider's user state changes via Socket.IO
+      // This includes both setting new pictures and deleting (undefined)
+      queryClient.setQueryData(["user-profile"], (oldData: any) => {
+        if (oldData) {
+          return {
+            ...oldData,
+            profilePicture: user.profilePicture
+          }
+        }
+        return oldData
+      })
+    }
+  }, [user?.profilePicture, queryClient])
+
   // Dialog handlers
   const handleOpenProfileDialog = () => {
-    setDialogDisplayName(profile?.display_name || user?.name || "")
+    setDialogDisplayName(profile?.name || user?.name || "")
     setShowProfileDialog(true)
   }
 
   const handleCloseProfileDialog = () => {
     setShowProfileDialog(false)
-    setDialogDisplayName(profile?.display_name || "")
+    setDialogDisplayName(profile?.name || "")
   }
 
   const handleSaveProfileDialog = async () => {
@@ -89,7 +116,7 @@ export function UserProfile() {
     }
     
     const updateData = {
-      display_name: dialogDisplayName.trim(),
+      name: dialogDisplayName.trim(),
       preferences: profile?.preferences || { theme: 'light', notifications: true }
     }
     
@@ -104,45 +131,33 @@ export function UserProfile() {
       // Update React Query cache optimistically
       queryClient.setQueryData(["user-profile"], (oldData: any) => ({
         ...oldData,
-        display_name: data.display_name,
+        name: data.name,
         preferences: data.preferences
       }))
       
       // Update local states
-      setDisplayName(data.display_name || data.name || displayName)
-      setDialogDisplayName(data.display_name || data.name || displayName)
+      setDisplayName(data.name || displayName)
+      setDialogDisplayName(data.name || displayName)
       
       // Close dialog and show success
       setShowProfileDialog(false)
       toast.success("Profile updated successfully!")
     },
     onError: (error: any) => {
-      console.error('❌ Profile update error:', error)
       toast.error(error.message || "Failed to update profile")
     }
   })
 
-  // 🚀 PROFESSIONAL SOCKET.IO UPLOAD - NO OPTIMISTIC UPDATES!
+  // Profile picture upload mutation
   const uploadPictureMutation = useMutation({
     mutationFn: userApi.uploadProfilePicture,
     onSuccess: async (data) => {
-      console.log('✅ PROFESSIONAL: Profile picture uploaded successfully!')
-      console.log('🚀 Socket.IO will handle real-time UI updates automatically')
-      
-      toast.success("Profile picture updated!")
-      
-      // UI will be updated automatically via Socket.IO real-time event
-      // No manual state updates needed - this is the professional approach!
+      // Socket.IO will handle real-time updates automatically
+      // No need to manually invalidate cache - real-time updates are faster!
+      toast.success("Profile picture uploading...")
     },
     onError: (error: any) => {
-      console.error('❌ Profile picture upload failed:', error)
-      console.error('Error details:', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status
-      })
-      
-      toast.error(`Upload failed: ${error.message}`)
+      toast.error(error.message || "Failed to upload profile picture")
     }
   })
 
@@ -150,8 +165,8 @@ export function UserProfile() {
   const deletePictureMutation = useMutation({
     mutationFn: userApi.deleteProfilePicture,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["user-profile"] })
-      toast.success("Profile picture removed!")
+      // Socket.IO will handle real-time updates automatically
+      toast.success("Profile picture removing...")
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to remove profile picture")
@@ -160,7 +175,7 @@ export function UserProfile() {
 
   const handleSaveProfile = () => {
     const updateData = {
-      display_name: displayName.trim() || undefined,
+      name: displayName.trim() || undefined,
       preferences: {
         theme: profile?.preferences?.theme || "dark",
         notifications
@@ -188,25 +203,17 @@ export function UserProfile() {
       return
     }
 
-    console.log('🚀 PROFESSIONAL: Starting profile picture upload...', {
-      fileName: file.name,
-      fileSize: file.size,
-      fileType: file.type
-    })
-
-    // 🚀 SIMPLE APPROACH: Upload to backend, Socket.IO handles UI updates
+    // Upload to backend and update UI automatically
     uploadPictureMutation.mutate(file)
     
-    console.log('🚀 Upload started - Socket.IO will update UI automatically when complete!')
-  }
-
-  // Reset file input
-  if (fileInputRef.current) {
-    fileInputRef.current.value = ''
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
   }
 
   const getUserInitials = () => {
-    const name = profile?.display_name || user?.name || user?.email || "U"
+    const name = profile?.name || user?.name || user?.email || "U"
     return name.charAt(0).toUpperCase()
   }
 
@@ -230,7 +237,7 @@ useEffect(() => {
 if (isLoading || showLoader) {
   return (
     <div className="min-h-[300px] flex items-center justify-center mt-32">
-      <GradientDotLoader size={8} />
+      <BrandedLoader size="md" />
     </div>
   );
 }
@@ -245,62 +252,104 @@ if (isLoading || showLoader) {
 
   return (
     <div className="h-[82vh] bg-background rounded-lg ml-0 mr-1.5 mt-0 mb-2 shadow-lg relative flex flex-col">
-      {/* Search Overlay - Shows when user is searching */}
-      {searchQuery && <SearchOverlay />}
-      
       {/* Profile Content - Scrollable */}
       <div className="flex-1 overflow-y-auto">
         {/* Header Section - Spotify Style */}
         <div className="relative px-6 py-8 bg-background rounded-t-lg">
           <div className="flex items-end space-x-6">
           {/* Profile Picture */}
-          <div className="relative group">
-            <div className="w-32 h-32 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-4xl font-bold relative shadow-2xl">
-              {profile?.profile_picture ? (
+          <div className="relative group" style={{ outline: 'none', border: 'none' }}>
+            <div 
+              className="w-32 h-32 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-4xl font-bold relative shadow-2xl focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0" 
+              style={{ 
+                outline: 'none !important', 
+                border: 'none !important', 
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                WebkitTapHighlightColor: 'transparent'
+              }}
+            >
+              {profile?.profilePicture ? (
                 <img
-                  src={profile.profile_picture}
+                  src={profile.profilePicture}
                   alt="Profile"
-                  className="w-full h-full object-cover rounded-full"
-                  onLoad={() => console.log('✅ DEBUG: Avatar image loaded successfully:', profile.profile_picture)}
+                  className="w-full h-full object-cover rounded-full focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+                  style={{ 
+                    outline: 'none !important', 
+                    border: 'none !important',
+                    WebkitTapHighlightColor: 'transparent'
+                  }}
+                  referrerPolicy="no-referrer"
+                  crossOrigin="anonymous"
                   onError={(e) => {
-                    console.error('❌ DEBUG: Avatar image failed to load:', profile.profile_picture)
-                    console.error('Error event:', e)
+                    // Silently handle image load failures
+                    e.currentTarget.style.display = 'none';
                   }}
                 />
               ) : (
                 getUserInitials()
               )}
               
-              {/* 🚀 LOADING INDICATOR OVERLAY */}
-              {uploadPictureMutation.isPending && (
-                <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+              {/* 🚀 LOADING INDICATOR OVERLAY - Keep avatar visible */}
+              {(uploadPictureMutation.isPending || deletePictureMutation.isPending) && (
+                <div 
+                  className="absolute inset-0 rounded-full flex items-center justify-center"
+                  style={{ 
+                    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                    outline: 'none !important', 
+                    border: 'none !important',
+                    boxShadow: 'none !important',
+                    WebkitTapHighlightColor: 'transparent',
+                    borderRadius: '50%'
+                  }}
+                >
+                  <BrandedLoader size="sm" />
                 </div>
               )}
             </div>
 
-            {/* Picture Upload Overlay */}
-            <div className="absolute inset-0 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-              <div className="flex space-x-2">
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadPictureMutation.isPending}
+            {/* Picture Upload Overlay - Hidden during loading */}
+            <div className={`absolute inset-0 bg-black/50 rounded-full transition-all duration-300 flex items-center justify-center ${
+              (uploadPictureMutation.isPending || deletePictureMutation.isPending) 
+                ? 'opacity-0 pointer-events-none' 
+                : 'opacity-0 group-hover:opacity-100'
+            }`}>
+              <div className="flex space-x-3">
+                {/* Camera Upload Button */}
+                <motion.div
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.95 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 17 }}
                 >
-                  <Camera className="h-4 w-4" />
-                </Button>
-                {profile?.profile_picture && (
                   <Button
-                    variant="destructive"
+                    variant="secondary"
                     size="icon"
-                    className="h-8 w-8"
-                    onClick={() => deletePictureMutation.mutate()}
-                    disabled={deletePictureMutation.isPending}
+                    className="h-8 w-8 bg-white/20 hover:bg-white/30 border-white/30 hover:border-white/50 backdrop-blur-sm transition-all duration-200 hover:shadow-lg hover:shadow-white/20"
+                    style={{ outline: 'none', border: 'none', boxShadow: 'none' }}
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadPictureMutation.isPending || deletePictureMutation.isPending}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Camera className="h-4 w-4 text-white" />
                   </Button>
+                </motion.div>
+
+                {/* Delete Button - Now positioned next to camera */}
+                {profile?.profilePicture && (
+                  <motion.div
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.95 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                  >
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      className="h-8 w-8 bg-red-500/90 hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-200 hover:shadow-red-500/30"
+                      style={{ outline: 'none', border: 'none', boxShadow: 'none' }}
+                      onClick={() => deletePictureMutation.mutate()}
+                      disabled={uploadPictureMutation.isPending || deletePictureMutation.isPending}
+                    >
+                      <Trash2 className="h-4 w-4 text-white" />
+                    </Button>
+                  </motion.div>
                 )}
               </div>
             </div>
@@ -331,7 +380,7 @@ if (isLoading || showLoader) {
                   <Button
                     onClick={() => {
                       setIsEditing(false)
-                      setDisplayName(profile?.display_name || "")
+                      setDisplayName(profile?.name || "")
                     }}
                     variant="outline"
                     size="sm"
@@ -347,10 +396,8 @@ if (isLoading || showLoader) {
                   className="text-4xl sm:text-6xl font-bold text-white mb-4 break-words cursor-pointer hover:text-blue-300 transition-colors"
                   onClick={handleOpenProfileDialog}
                 >
-                  {profile?.display_name || user?.name || "Music Lover"}
+                  {profile?.name || user?.name || "Music Lover"}
                 </h1>
-                
-
 
               </div>
             )}
@@ -387,57 +434,100 @@ if (isLoading || showLoader) {
 
       {/* Profile Edit Dialog */}
       <Dialog open={showProfileDialog} onOpenChange={setShowProfileDialog}>
-        <DialogContent className="sm:max-w-md bg-slate-900/95 backdrop-blur border-blue-500/20">
+        <DialogContent className="sm:max-w-md bg-background backdrop-blur-md border-border">
           <DialogHeader>
-            <DialogTitle className="text-white text-lg font-semibold">Profile details</DialogTitle>
+            <DialogTitle className="text-foreground text-lg font-semibold">Profile details</DialogTitle>
           </DialogHeader>
           
           <div className="space-y-6 py-4">
             {/* Profile Picture Section */}
             <div className="flex items-center space-x-4">
               {/* Profile Picture */}
-              <div className="relative group">
-                <div className="w-20 h-20 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-2xl font-bold relative shadow-xl">
-                  {profile?.profile_picture ? (
+              <div className="relative group" style={{ outline: 'none', border: 'none' }}>
+                <div 
+                  className="w-20 h-20 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-2xl font-bold relative shadow-xl focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+                  style={{ 
+                    outline: 'none !important', 
+                    border: 'none !important',
+                    WebkitTapHighlightColor: 'transparent'
+                  }}
+                >
+                  {profile?.profilePicture ? (
                     <img
-                      src={profile.profile_picture}
+                      src={profile.profilePicture}
                       alt="Profile"
-                      className="w-full h-full object-cover rounded-full"
+                      className="w-full h-full object-cover rounded-full focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+                      style={{ 
+                        outline: 'none !important', 
+                        border: 'none !important',
+                        WebkitTapHighlightColor: 'transparent'
+                      }}
                     />
                   ) : (
                     getUserInitials()
                   )}
                   
-                  {/* Loading Indicator */}
-                  {uploadPictureMutation.isPending && (
-                    <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center">
-                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+                  {/* 🚀 LOADING INDICATOR OVERLAY - Keep avatar visible */}
+                  {(uploadPictureMutation.isPending || deletePictureMutation.isPending) && (
+                    <div 
+                      className="absolute inset-0 rounded-full flex items-center justify-center"
+                      style={{ 
+                        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                        outline: 'none !important', 
+                        border: 'none !important',
+                        boxShadow: 'none !important',
+                        WebkitTapHighlightColor: 'transparent',
+                        borderRadius: '50%'
+                      }}
+                    >
+                      <BrandedLoader size="sm" />
                     </div>
                   )}
                 </div>
 
-                {/* Picture Upload Overlay */}
-                <div className="absolute inset-0 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <div className="flex space-x-1">
-                    <Button
-                      variant="secondary"
-                      size="icon"
-                      className="h-6 w-6"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploadPictureMutation.isPending}
+                {/* Picture Upload Overlay - Hidden during loading */}
+                <div className={`absolute inset-0 bg-black/50 rounded-full transition-all duration-300 flex items-center justify-center ${
+                  (uploadPictureMutation.isPending || deletePictureMutation.isPending) 
+                    ? 'opacity-0 pointer-events-none' 
+                    : 'opacity-0 group-hover:opacity-100'
+                }`}>
+                  <div className="flex space-x-3">
+                    {/* Camera Upload Button */}
+                    <motion.div
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.95 }}
+                      transition={{ type: "spring", stiffness: 400, damping: 17 }}
                     >
-                      <Camera className="h-3 w-3" />
-                    </Button>
-                    {profile?.profile_picture && (
                       <Button
-                        variant="destructive"
+                        variant="secondary"
                         size="icon"
-                        className="h-6 w-6"
-                        onClick={() => deletePictureMutation.mutate()}
-                        disabled={deletePictureMutation.isPending}
+                        className="h-8 w-8 bg-white/20 hover:bg-white/30 border-white/30 hover:border-white/50 backdrop-blur-sm transition-all duration-200 hover:shadow-lg hover:shadow-white/20"
+                        style={{ outline: 'none', border: 'none', boxShadow: 'none' }}
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadPictureMutation.isPending || deletePictureMutation.isPending}
                       >
-                        <Trash2 className="h-3 w-3" />
+                        <Camera className="h-4 w-4 text-white" />
                       </Button>
+                    </motion.div>
+
+                    {/* Delete Button - Now positioned next to camera */}
+                    {profile?.profilePicture && (
+                      <motion.div
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.95 }}
+                        transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                      >
+                        <Button
+                          variant="destructive"
+                          size="icon"
+                          className="h-8 w-8 bg-red-500/90 hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-200 hover:shadow-red-500/30"
+                          style={{ outline: 'none', border: 'none', boxShadow: 'none' }}
+                          onClick={() => deletePictureMutation.mutate()}
+                          disabled={uploadPictureMutation.isPending || deletePictureMutation.isPending}
+                        >
+                          <Trash2 className="h-4 w-4 text-white" />
+                        </Button>
+                      </motion.div>
                     )}
                   </div>
                 </div>
@@ -449,30 +539,25 @@ if (isLoading || showLoader) {
                   value={dialogDisplayName}
                   onChange={(e) => setDialogDisplayName(e.target.value)}
                   placeholder="Enter your name"
-                  className="bg-slate-800/50 border-blue-500/30 text-white placeholder:text-slate-400 focus:border-blue-400"
+                  className="bg-background/50 border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-0 focus:border-[#00BFFF] transition-colors"
+                  style={{ outline: 'none', boxShadow: 'none' }}
                 />
               </div>
             </div>
 
             {/* Terms Text */}
-            <div className="text-xs text-slate-400 space-y-1">
-              <p>By proceeding, you agree to give 2k Music access to the image you choose to upload.</p>
-              <p>Please make sure you have the right to upload the image.</p>
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p>Uploading an image will update your profile picture across 2k Music.</p>
+              <p>Make sure you own the rights to use this image.</p>
             </div>
 
             {/* Action Buttons */}
-            <div className="flex justify-end space-x-3">
-              <Button
-                variant="outline"
-                onClick={handleCloseProfileDialog}
-                className="border-blue-500/30 text-slate-300 hover:bg-slate-800/50"
-              >
-                Cancel
-              </Button>
+            <div className="flex justify-end">
               <Button
                 onClick={handleSaveProfileDialog}
                 disabled={updateProfileMutation.isPending}
-                className="bg-blue-600 text-white hover:bg-blue-700"
+                className="bg-gradient-to-br from-primary to-blue-600 text-white hover:from-primary/80 hover:to-blue-600/80 rounded-full h-10 px-5 focus:outline-none focus:ring-0 transition-all disabled:from-primary/50 disabled:to-blue-600/50 disabled:text-white/70"
+                style={{ outline: 'none', boxShadow: 'none' }}
               >
                 {updateProfileMutation.isPending ? "Saving..." : "Save"}
               </Button>

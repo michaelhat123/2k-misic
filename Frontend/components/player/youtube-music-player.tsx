@@ -75,9 +75,7 @@ export default function YouTubeMusicPlayer({
     if (isPlaying) {
       // Try to play if it's an actual audio stream
       if (audioRef.current && streamData.streamUrl.includes('audio')) {
-        audioRef.current.play().catch(err => {
-          console.warn('Audio play failed:', err);
-        });
+        audioRef.current.play().catch(() => {});
       }
     } else {
       if (audioRef.current) {

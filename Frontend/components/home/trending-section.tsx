@@ -28,7 +28,6 @@ export function TrendingSection() {
         });
 
         if (!response.ok) {
-          console.error('❌ Trending API failed:', response.status);
           return []; // Return empty array to prevent crashes
         }
 
@@ -42,13 +41,11 @@ export function TrendingSection() {
         
         // Ensure we return an array to prevent .slice() crashes
         if (!Array.isArray(data)) {
-          console.error('❌ Trending API returned non-array:', typeof data);
           return [];
         }
 
         return data;
       } catch (error) {
-        console.error('❌ Error fetching trending tracks:', error);
         return []; // Return empty array on error to prevent crashes
       }
     },

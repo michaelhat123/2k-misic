@@ -13,6 +13,26 @@ interface Artist {
   type?: string
 }
 
+// Helper to fetch artist image from Spotify API
+const fetchSpotifyArtistImage = async (spotifyId: string): Promise<string> => {
+  try {
+    const token = localStorage.getItem('auth_token')
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/spotify/artist/${spotifyId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    })
+
+    if (response.ok) {
+      const artistData = await response.json()
+      return artistData.images?.[0]?.url || ''
+    }
+  } catch (error) {
+    // Silent fail
+  }
+  return ''
+}
+
 // Helper to get real artist image or meaningful fallback
 const getArtistImage = (artist: Artist) => {
   // 🎵 PRIORITY: Use real Spotify image if available
@@ -30,13 +50,13 @@ export function TopArtists() {
   const [atomicImagesLoaded, setAtomicImagesLoaded] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const [imageLoadError, setImageLoadError] = useState(false)
+  const [enrichedArtists, setEnrichedArtists] = useState<Artist[]>([])
 
   // 🎵 FETCH REAL SPOTIFY ARTISTS DATA with robust error handling
   const { data: artistsData, isLoading, error, refetch } = useQuery({
     queryKey: ["spotify-top-artists"],
     queryFn: async () => {
       try {
-        console.log('🎵 Fetching trending artists...')
         // Fetch trending artists from backend
         const trendingArtists = await recommendationsApi.getTrendingArtists()
         
@@ -45,20 +65,9 @@ export function TopArtists() {
         }
         
         const artists = trendingArtists.slice(0, 6)
-        console.log(`✅ Successfully fetched ${artists.length} trending artists`)
         return artists
       } catch (error: any) {
-        console.error('❌ Failed to fetch trending artists:', {
-          message: error.message,
-          status: error.response?.status,
-          stack: error.stack
-        })
-        
-        // Increment retry count for user feedback
-        setRetryCount(prev => prev + 1)
-        
-        // Re-throw to trigger React Query's retry mechanism
-        throw error
+        return [] as Artist[]
       }
     },
     staleTime: 1000 * 60 * 10, // 10 minutes
@@ -72,26 +81,50 @@ export function TopArtists() {
   // 🎵 Use the processed artists data from the query
   const artists: Artist[] = Array.isArray(artistsData) ? artistsData : []
 
-  // Fill with fallback artists if we don't have enough
-  const fallbackArtists = [
-    { id: "fallback-1", name: "SXID", type: "Artist" },
-    { id: "fallback-2", name: "The Weeknd", type: "Artist" },
-    { id: "fallback-3", name: "Taylor Swift", type: "Artist" },
-    { id: "fallback-4", name: "Drake", type: "Artist" },
-    { id: "fallback-5", name: "Billie Eilish", type: "Artist" },
-    { id: "fallback-6", name: "Ed Sheeran", type: "Artist" },
+  // Fill with fallback artists if we don't have enough (with proper Spotify IDs)
+  const fallbackArtists: Artist[] = [
+    { id: "3TVXtAsR1Inumwj472S9r4", name: "Drake", type: "Artist" },
+    { id: "1Xyo4u8uXC1ZmMpatF05PJ", name: "The Weeknd", type: "Artist" },
+    { id: "06HL4z0CvFAxyc27GXpf02", name: "Taylor Swift", type: "Artist" },
+    { id: "6qqNVTkY8uBg9cP3Jd7DAH", name: "Billie Eilish", type: "Artist" },
+    { id: "6eUKZXaKkcviH0Ku9w2n3V", name: "Ed Sheeran", type: "Artist" },
+    { id: "53XhwfbYqKCa1cC15pYq2q", name: "Imagine Dragons", type: "Artist" },
   ]
 
   // Only use fallbacks if we have a complete error (no data at all)
-  const finalArtists = artists.length === 0 && error ? fallbackArtists.slice(0, 6) : artists
-  while (finalArtists.length < 6 && artists.length > 0) {
-    const fallback = fallbackArtists[finalArtists.length]
+  const baseArtists = artists.length === 0 && error ? fallbackArtists.slice(0, 6) : artists
+  while (baseArtists.length < 6 && artists.length > 0) {
+    const fallback = fallbackArtists[baseArtists.length]
     if (fallback) {
-      finalArtists.push(fallback)
+      baseArtists.push(fallback)
     } else {
       break
     }
   }
+
+  // Enrich artists with Spotify images if they don't have them
+  useEffect(() => {
+    const enrichArtists = async () => {
+      const enriched = await Promise.all(
+        baseArtists.map(async (artist) => {
+          // If artist has no image but has a valid Spotify ID, fetch it
+          if (!artist.image && artist.id && !artist.id.startsWith('fallback-')) {
+            const spotifyImage = await fetchSpotifyArtistImage(artist.id)
+            return { ...artist, image: spotifyImage }
+          }
+          return artist
+        })
+      )
+      setEnrichedArtists(enriched)
+    }
+
+    if (baseArtists.length > 0) {
+      enrichArtists()
+    }
+  }, [baseArtists.length, JSON.stringify(baseArtists)])
+
+  // Use enriched artists for final display
+  const finalArtists = enrichedArtists.length > 0 ? enrichedArtists : baseArtists
 
   // Atomic loading: wait for data AND images to be loaded
   useEffect(() => {
@@ -104,14 +137,11 @@ export function TopArtists() {
       
       // Batch preload all images with error handling
       if (imageUrls.length > 0) {
-        console.log(`🖼️ Preloading ${imageUrls.length} artist images...`)
         batchPreloadImages(imageUrls)
           .then(() => {
-            console.log('✅ All artist images preloaded successfully')
             setAtomicImagesLoaded(true)
           })
           .catch(error => {
-            console.warn('⚠️ Some artist images failed to preload:', error)
             setImageLoadError(true)
             // Still show content even if some images fail
             setAtomicImagesLoaded(true)

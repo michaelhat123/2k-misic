@@ -1,0 +1,18 @@
+[dev] 
+[dev] > my-v0-project@0.1.0 dev
+[dev] > next dev -p 3000
+[dev] 
+[dev]    ▲ Next.js 15.2.4
+[dev]    - Local:        http://localhost:3000
+[dev]    - Network:      http://10.12.75.93:3000
+[dev]    - Environments: .env
+[dev] 
+[dev]  ✓ Starting...
+[dev]  ✓ Ready in 4.6s
+[dev]  ○ Compiling / ...
+[dev]  ✓ Compiled / in 12.9s (2121 modules)
+[1] ^C
+[dev] Terminate batch job (Y/N)? 
+[1] wait-on http://localhost:3000 && ts-node scripts/warmup.ts && node -e "console.log('🚀 Warmup complete! Dev server is running at http://localhost:3000'); setInterval(() =, 1000000)" exited with code 3221225786
+[dev] [?25h
+[dev] npm run dev exited with code 1

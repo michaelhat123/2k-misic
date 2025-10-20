@@ -47,7 +47,6 @@ export async function getTrackStream(track: PlayTrackRequest): Promise<TrackStre
 
     return null;
   } catch (error) {
-    console.error('Error getting track stream:', error);
     return null;
   }
 }
@@ -80,7 +79,6 @@ export async function getBatchStreams(tracks: PlayTrackRequest[]): Promise<{ [sp
 
     return {};
   } catch (error) {
-    console.error('Error getting batch streams:', error);
     return {};
   }
 }
@@ -111,7 +109,6 @@ export async function searchYouTubeMusic(query: string, limit: number = 10): Pro
 
     return [];
   } catch (error) {
-    console.error('Error searching YouTube Music:', error);
     return [];
   }
 }

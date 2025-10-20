@@ -14,6 +14,9 @@ import {
   SkipForward,
   Shuffle,
   Repeat,
+  Repeat1,
+  RotateCcw,
+  RefreshCw,
   Volume2,
   VolumeX,
   Plus,
@@ -26,11 +29,19 @@ import {
   Cast,
   Headphones,
   PlusCircle,
+  Music,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatTime } from "@/lib/utils"
+import { NowPlayingSidebar } from "./now-playing-sidebar"
+import { SongActions } from "@/components/ui/song-actions"
 
-export function PlayerBar() {
+interface PlayerBarProps {
+  showNowPlaying?: boolean
+  onToggleNowPlaying?: () => void
+}
+
+export function PlayerBar({ showNowPlaying = false, onToggleNowPlaying }: PlayerBarProps) {
   const {
     currentTrack,
     isPlaying,
@@ -46,10 +57,12 @@ export function PlayerBar() {
     previousTrack,
     toggleShuffle,
     toggleRepeat,
+    playbackError,
   } = usePlayer()
 
   const [isMuted, setIsMuted] = useState(false)
   const [previousVolume, setPreviousVolume] = useState(volume)
+  // Now Playing state is managed by parent component
 
   const handleVolumeToggle = () => {
     if (isMuted) {
@@ -83,16 +96,20 @@ export function PlayerBar() {
           </Avatar>
           <div className="flex flex-col justify-center min-w-0 ml-3">
             <span className="text-[15px] leading-tight font-medium truncate">{currentTrack.title}</span>
-            <span className="text-xs text-muted-foreground truncate">{currentTrack.artist}</span>
+            {playbackError ? (
+              <span className="text-xs text-amber-500 truncate">{playbackError}</span>
+            ) : (
+              <span className="text-xs text-muted-foreground truncate">{currentTrack.artist}</span>
+            )}
           </div>
-          <span
-            className="ml-3 flex items-center justify-center rounded-full transition bg-transparent group-hover:bg-[#222] group-hover:opacity-100 opacity-70 w-6 h-6 cursor-pointer"
-            tabIndex={0}
-            role="button"
-            aria-label="Add to Liked Songs"
-          >
-            <PlusCircle className="h-4 w-4" />
-          </span>
+          <div className="ml-3 opacity-0 group-hover:opacity-100 transition-opacity">
+            <SongActions
+              track={currentTrack}
+              size="sm"
+              variant="ghost"
+              className="gap-1"
+            />
+          </div>
         </div>
 
         {/* Player Controls (center, absolutely centered) */}
@@ -102,12 +119,12 @@ export function PlayerBar() {
               variant="ghost"
               size="icon"
               onClick={toggleShuffle}
-              className={cn("h-7 w-7 opacity-70 hover:opacity-100 transition-opacity", shuffle && "text-primary opacity-100")}
+              className={cn("h-8 w-8 opacity-70 hover:opacity-100 hover:bg-blue-500/10 hover:text-blue-500 transition-colors duration-200", shuffle && "text-primary opacity-100")}
             >
-              <Shuffle className="h-4 w-4" />
+              <Shuffle className="w-3 h-3" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={previousTrack} className="h-7 w-7 opacity-70 hover:opacity-100 transition-opacity">
-              <SkipBack className="h-4 w-4" />
+            <Button variant="ghost" size="icon" onClick={previousTrack} className="h-8 w-8 opacity-70 hover:opacity-100 hover:bg-blue-500/10 hover:text-blue-500 transition-colors duration-200">
+              <SkipBack className="w-3 h-3" />
             </Button>
             <Button
   variant="default"
@@ -120,22 +137,55 @@ export function PlayerBar() {
   }}
 >
               {isPlaying ? (
-  <Pause className="h-4 w-4" style={{ color: '#222222' }} />
+  <Pause className="w-3 h-3" style={{ color: '#222222' }} />
 ) : (
-  <Play className="h-4 w-4 ml-0.5" style={{ color: '#222222' }} />
+  <Play className="w-3 h-3 ml-0.5" style={{ color: '#222222' }} />
 )}
             </Button>
-            <Button variant="ghost" size="icon" onClick={nextTrack} className="h-7 w-7 opacity-70 hover:opacity-100 transition-opacity">
-              <SkipForward className="h-4 w-4" />
+            <Button variant="ghost" size="icon" onClick={nextTrack} className="h-8 w-8 opacity-70 hover:opacity-100 hover:bg-blue-500/10 hover:text-blue-500 transition-colors duration-200">
+              <SkipForward className="w-3 h-3" />
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleRepeat}
-              className={cn("h-7 w-7 opacity-70 hover:opacity-100 transition-opacity", repeat !== "none" && "text-primary opacity-100")}
+            <motion.div
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.95 }}
+              transition={{ type: "spring", stiffness: 400, damping: 17 }}
             >
-              <Repeat className="h-4 w-4" />
-            </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleRepeat}
+                className={cn(
+                  "h-8 w-8 transition-colors duration-200 relative hover:bg-blue-500/10 hover:text-blue-500",
+                  repeat !== "none" ? "text-primary opacity-100" : "opacity-70"
+                )}
+              >
+                <motion.div
+                  animate={{
+                    rotate: repeat !== "none" ? [0, 360] : 0,
+                  }}
+                  transition={{
+                    duration: 0.6,
+                    ease: "easeInOut",
+                    times: [0, 1]
+                  }}
+                  key={repeat} // Re-trigger animation when repeat state changes
+                >
+                  <Repeat className="w-3 h-3" />
+                </motion.div>
+                {/* Repeat One Indicator - Small dot at bottom center with animation */}
+                <AnimatePresence>
+                  {repeat === "one" && (
+                    <motion.span
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0, opacity: 0 }}
+                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                      className="absolute bottom-0 left-[48%] w-1 h-1 bg-primary rounded-full"
+                    ></motion.span>
+                  )}
+                </AnimatePresence>
+              </Button>
+            </motion.div>
           </div>
 
           {/* Progress Bar */}
@@ -158,17 +208,17 @@ export function PlayerBar() {
 
         {/* Volume & Additional Controls (right) */}
         <div className="flex items-center space-x-1 ml-auto">
-          <Button variant="ghost" size="icon" className="h-6 w-6 opacity-70 hover:opacity-100 transition-opacity">
-            <Mic2 className="h-3 w-3" />
+          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-70 hover:opacity-100 hover:bg-blue-500/10 hover:text-blue-500 transition-colors duration-200">
+            <Mic2 className="w-3 h-3" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-6 w-6 opacity-70 hover:opacity-100 transition-opacity">
-            <List className="h-3 w-3" />
+          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-70 hover:opacity-100 hover:bg-blue-500/10 hover:text-blue-500 transition-colors duration-200">
+            <List className="w-3 h-3" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-6 w-6 opacity-70 hover:opacity-100 transition-opacity">
-            <Headphones className="h-3 w-3" />
+          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-70 hover:opacity-100 hover:bg-blue-500/10 hover:text-blue-500 transition-colors duration-200">
+            <Headphones className="w-3 h-3" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={handleVolumeToggle} className="h-6 w-6 opacity-70 hover:opacity-100 transition-opacity">
-            {isMuted || volume === 0 ? <VolumeX className="h-3 w-3" /> : <Volume2 className="h-3 w-3" />}
+          <Button variant="ghost" size="icon" onClick={handleVolumeToggle} className="h-8 w-8 opacity-70 hover:opacity-100 hover:bg-blue-500/10 hover:text-blue-500 transition-colors duration-200">
+            {isMuted || volume === 0 ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
           </Button>
           <div className="flex items-center space-x-2">
             <div className="w-20 flex items-center">
@@ -179,15 +229,25 @@ export function PlayerBar() {
                 gradient="linear-gradient(90deg, #00bfff, #1e90ff)"
                 background="#444"
                 onChange={setVolume}
-                className="w-full cursor-pointer"
               />
             </div>
           </div>
-          <Button variant="ghost" size="icon" className="h-6 w-6 opacity-70 hover:opacity-100 transition-opacity">
-            <PictureInPicture2 className="h-3 w-3" />
+          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-70 hover:opacity-100 hover:bg-blue-500/10 hover:text-blue-500 transition-colors duration-200">
+            <PictureInPicture2 className="w-3 h-3" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-6 w-6 opacity-70 hover:opacity-100 transition-opacity">
-            <Maximize2 className="h-3 w-3" />
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className={cn(
+              "h-8 w-8 opacity-70 hover:opacity-100 hover:bg-blue-500/10 hover:text-blue-500 transition-colors duration-200",
+              showNowPlaying && "text-primary opacity-100"
+            )}
+            onClick={onToggleNowPlaying}
+          >
+            <Music className="w-3 h-3" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-70 hover:opacity-100 hover:bg-blue-500/10 hover:text-blue-500 transition-colors duration-200">
+            <Maximize2 className="w-3 h-3" />
           </Button>
         </div>
       </motion.div>

@@ -16,12 +16,13 @@ import { Badge } from "@/components/ui/badge"
 import { useAuth } from "../auth/auth-provider"
 import { Search, Bell, Settings, User, LogOut, ChevronLeft, ChevronRight, Home, UserCog, HelpCircle } from "lucide-react"
 import { motion } from "framer-motion"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { searchApi } from "@/lib/api/search"
 import { debounce } from "@/lib/utils"
 import Link from "next/link"
 import { useNavigation } from "./navigation-context"
+import { WindowControls } from "./window-controls"
 
 // Search Context for real-time search state
 interface SearchContextType {
@@ -79,29 +80,35 @@ export function SearchProvider({ children }: { children: React.ReactNode }) {
   )
 }
 
+
 export function TopNavigation() {
   const { user, logout } = useAuth()
   const pathname = usePathname()
-  const { searchQuery, setSearchQuery, searchResults, isSearching, clearSearch } = useSearch()
-  const { showProfile, setShowProfile, clearOverlays } = useNavigation()
+  const router = useRouter()
+  const { searchQuery, clearSearch, setSearchQuery } = useSearch()
+  const { showProfile, showDiscovery, setShowProfile, clearOverlays, isHomeActive, setIsHomeActive } = useNavigation()
 
-  // Debug top nav user data
+  // Reset home active state when navigating away from home
   useEffect(() => {
+    if (pathname !== "/" || showProfile || searchQuery || showDiscovery) {
+      setIsHomeActive(false)
+    }
+  }, [pathname, showProfile, searchQuery, showDiscovery, setIsHomeActive])
 
-  }, [user])
+  // Debug top nav user data - removed empty useEffect to prevent infinite re-renders
   
   // 🚀 OLD CUSTOM EVENT LISTENERS REMOVED - USING SOCKET.IO NOW!
   // The auth context now handles real-time updates via Socket.IO
 
   return (
     <motion.header
-      className="h-16 flex items-center justify-between px-6"
+      className="h-16 flex items-center justify-between px-6 drag-region"
       initial={{ y: -20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.3 }}
     >
       {/* Navigation Controls */}
-      <div className="flex items-center space-x-4">
+      <div className="flex items-center space-x-4 no-drag">
         <Button 
           variant="ghost" 
           size="sm" 
@@ -109,6 +116,7 @@ export function TopNavigation() {
           onClick={() => {
             clearOverlays() // Clear all overlays when navigating
             clearSearch()
+            router.back() // Navigate to previous page in history
           }}
         >
           <ChevronLeft className="h-4 w-4" />
@@ -120,6 +128,7 @@ export function TopNavigation() {
           onClick={() => {
             clearOverlays() // Clear all overlays when navigating  
             clearSearch()
+            router.forward() // Navigate to next page in history
           }}
         >
           <ChevronRight className="h-4 w-4" />
@@ -127,14 +136,15 @@ export function TopNavigation() {
       </div>
 
       {/* Home Icon + Search Bar */}
-      <div className="flex items-center space-x-3 flex-1 max-w-md mx-8">
-        {/* Home Icon - Highlighted when on homepage AND no overlays */}
+      <div className="flex items-center space-x-3 flex-1 max-w-md mx-8 no-drag">
+        {/* Home Icon - Highlighted immediately when clicked or when conditions are met */}
         <button
           onClick={() => {
+            setIsHomeActive(true); // Turn blue immediately
             clearOverlays();
             clearSearch();
           }}
-          className={`h-10 w-10 rounded-full flex items-center justify-center transition-colors duration-150 focus:outline-none border-none p-0 ${(pathname === "/" && !showProfile && !searchQuery) ? 'bg-gradient-to-br from-primary to-blue-600' : 'bg-secondary'} `}
+          className={`h-10 w-10 rounded-full flex items-center justify-center transition-colors duration-150 focus:outline-none border-none p-0 ${(isHomeActive || (pathname === "/" && !showProfile && !searchQuery && !showDiscovery)) ? 'bg-gradient-to-br from-primary to-blue-600' : 'bg-secondary'} `}
         >
           <Home className="h-5 w-5 text-white" />
         </button>
@@ -151,8 +161,8 @@ export function TopNavigation() {
         </div>
       </div>
 
-      {/* User Actions */}
-      <div className="flex items-center space-x-2">
+      {/* User Actions + Window Controls */}
+      <div className="flex items-center space-x-2 no-drag">
         {/* Notifications */}
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5" />
@@ -166,19 +176,11 @@ export function TopNavigation() {
               <Avatar className="h-8 w-8">
                 <AvatarImage 
                   src={(() => {
-                    const finalSrc = user?.picture || user?.profilePicture || undefined
-                    console.log('🖼️ TOP NAVBAR DEBUG:', {
-                      user: user,
-                      userPicture: user?.picture,
-                      userProfilePicture: user?.profilePicture,
-                      finalSrc: finalSrc
-                    })
+                    const finalSrc = user?.profilePicture || user?.picture || undefined
                     return finalSrc
                   })()} 
                   alt={user?.name || user?.email || 'User'} 
                   className="object-cover"
-                  onLoad={() => console.log('✅ TOP NAVBAR: Avatar loaded successfully:', user?.picture)}
-                  onError={() => console.log('❌ TOP NAVBAR: Avatar failed to load:', user?.picture)}
                 />
                 <AvatarFallback className="bg-gradient-to-br from-primary to-blue-600 text-white font-semibold">
                   {(user?.name || user?.email || 'U').charAt(0).toUpperCase()}
@@ -206,9 +208,11 @@ export function TopNavigation() {
               <HelpCircle className="mr-2 h-4 w-4" />
               <span>Support</span>
             </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Settings className="mr-2 h-4 w-4" />
-              <span>Settings</span>
+            <DropdownMenuItem asChild>
+              <Link href="/settings" className="cursor-pointer">
+                <Settings className="mr-2 h-4 w-4" />
+                <span>Settings</span>
+              </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => logout()}>
@@ -217,6 +221,9 @@ export function TopNavigation() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        
+        {/* Window Controls (Electron only) */}
+        <WindowControls />
       </div>
     </motion.header>
   )

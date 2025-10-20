@@ -3,27 +3,39 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 // Helper function to safely get auth token (FIXED - correct key)
 const getAuthToken = (): string | null => {
   if (typeof window !== "undefined" && window.localStorage) {
-    return localStorage.getItem("firebase_token")  // ✅ FIXED: Use correct token key
+    return localStorage.getItem("auth_token")  // ✅ FIXED: Use correct token key
   }
   return null
 }
 
-// Helper function to refresh Firebase token
-const refreshAuthToken = async (): Promise<string | null> => {
+// Helper function to refresh JWT token if needed
+const refreshJwtToken = async (): Promise<string | null> => {
   if (typeof window === "undefined") return null
   
   try {
-    const { getAuth } = await import('firebase/auth')
-    const auth = getAuth()
-    if (auth.currentUser) {
-      const freshToken = await auth.currentUser.getIdToken(true) // Force refresh
-      localStorage.setItem('firebase_token', freshToken)
-      console.log('✅ User API: Token refreshed!')
-      return freshToken
+    const refreshToken = localStorage.getItem('refresh_token')
+    if (refreshToken) {
+      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${refreshToken}` 
+        }
+      })
+      
+      if (response.ok) {
+        const { accessToken, refreshToken: newRefreshToken } = await response.json()
+        localStorage.setItem('auth_token', accessToken)
+        if (newRefreshToken) {
+          localStorage.setItem('refresh_token', newRefreshToken)
+        }
+        return accessToken
+      }
     }
   } catch (error) {
-    console.error('❌ User API: Token refresh failed:', error)
+    // Silent fail
   }
+  
   return null
 }
 
@@ -38,13 +50,12 @@ export const userApi = {
 
     // If token expired, try to refresh and retry
     if (response.status === 401) {
-      console.log('🔄 User API: Token expired, refreshing...')
-      const freshToken = await refreshAuthToken()
-      if (freshToken) {
+      const token = await refreshJwtToken()
+      if (token) {
         // Retry with fresh token
         response = await fetch(`${API_BASE_URL}/users/profile`, {
           headers: {
-            Authorization: `Bearer ${freshToken}`,
+            Authorization: `Bearer ${token}`,
           },
         })
       }
@@ -58,13 +69,7 @@ export const userApi = {
   },
 
   async updateProfile(userData: { display_name?: string; preferences?: { theme?: string; notifications?: boolean } }) {
-    console.log('🚀 updateProfile called with:', userData)
-    
     const token = getAuthToken()
-    console.log('🔑 Auth token present:', !!token)
-    
-    console.log('📤 Making PUT request to:', `${API_BASE_URL}/users/profile`)
-    console.log('📤 Request payload:', JSON.stringify(userData, null, 2))
     
     const response = await fetch(`${API_BASE_URL}/users/profile`, {
       method: "PUT",
@@ -74,18 +79,13 @@ export const userApi = {
       },
       body: JSON.stringify(userData),
     })
-    
-    console.log('📥 Response status:', response.status)
-    console.log('📥 Response ok:', response.ok)
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error('❌ Update error response:', errorText)
       throw new Error(`Failed to update user profile: ${response.status} ${errorText}`)
     }
 
     const result = await response.json()
-    console.log('✅ Update success result:', result)
     return result
   },
 
@@ -105,19 +105,10 @@ export const userApi = {
   },
 
   async uploadProfilePicture(file: File) {
-    console.log('🚀 uploadProfilePicture called with:', {
-      fileName: file.name,
-      fileSize: file.size,
-      fileType: file.type
-    })
-    
     const token = getAuthToken()
-    console.log('🔑 Auth token present:', !!token)
     
     const formData = new FormData()
     formData.append("file", file)  // ✅ FIXED: Use correct field name
-    
-    console.log('📤 Making PUT request to:', `${API_BASE_URL}/users/profile/picture`)
 
     const response = await fetch(`${API_BASE_URL}/users/profile/picture`, {
       method: "PUT",  // ✅ FIXED: Use correct HTTP method
@@ -126,18 +117,13 @@ export const userApi = {
       },
       body: formData,
     })
-    
-    console.log('📥 Response status:', response.status)
-    console.log('📥 Response ok:', response.ok)
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error('❌ Upload error response:', errorText)
       throw new Error(`Failed to upload profile picture: ${response.status} ${errorText}`)
     }
 
     const result = await response.json()
-    console.log('✅ Upload success result:', result)
     return result
   },
 

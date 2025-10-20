@@ -1,0 +1,142 @@
+/* Settings-based styles */
+
+/* Compact Mode */
+.compact-mode {
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 0.75rem;
+  --spacing-lg: 1rem;
+  --spacing-xl: 1.25rem;
+}
+
+.compact-mode .p-6 {
+  padding: 1rem !important;
+}
+
+.compact-mode .p-4 {
+  padding: 0.75rem !important;
+}
+
+.compact-mode .p-3 {
+  padding: 0.5rem !important;
+}
+
+.compact-mode .gap-4 {
+  gap: 0.75rem !important;
+}
+
+.compact-mode .gap-3 {
+  gap: 0.5rem !important;
+}
+
+.compact-mode .space-y-6 > * + * {
+  margin-top: 1rem !important;
+}
+
+.compact-mode .space-y-4 > * + * {
+  margin-top: 0.75rem !important;
+}
+
+.compact-mode .mb-6 {
+  margin-bottom: 1rem !important;
+}
+
+.compact-mode .mb-4 {
+  margin-bottom: 0.75rem !important;
+}
+
+.compact-mode .h-12 {
+  height: 2.5rem !important;
+}
+
+.compact-mode .h-10 {
+  height: 2rem !important;
+}
+
+/* Animated Backgrounds */
+.animated-backgrounds .bg-gradient-to-br {
+  background-size: 200% 200%;
+  animation: gradientShift 8s ease infinite;
+}
+
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animated-backgrounds .hover\:bg-accent\/50:hover {
+  transition: all 0.3s ease;
+  transform: translateY(-1px);
+}
+
+.animated-backgrounds .group:hover {
+  transition: all 0.2s ease;
+}
+
+/* Hide album art when disabled */
+.hide-album-art .album-art,
+.hide-album-art [data-album-art] {
+  display: none !important;
+}
+
+/* Hide now playing bar when disabled */
+.hide-now-playing-bar .now-playing-bar,
+.hide-now-playing-bar [data-now-playing-bar] {
+  display: none !important;
+}
+
+/* Hide lyrics when disabled */
+.hide-lyrics .lyrics,
+.hide-lyrics [data-lyrics] {
+  display: none !important;
+}
+
+/* Zoom level adjustments */
+html {
+  transition: font-size 0.2s ease;
+}
+
+/* Custom range slider styling */
+.slider {
+  background: linear-gradient(to right, hsl(var(--primary)) 0%, hsl(var(--primary)) var(--value, 50%), hsl(var(--muted)) var(--value, 50%), hsl(var(--muted)) 100%);
+}
+
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  height: 20px;
+  width: 20px;
+  border-radius: 50%;
+  background: hsl(var(--primary));
+  cursor: pointer;
+  border: 2px solid hsl(var(--background));
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+.slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.slider::-moz-range-thumb {
+  height: 20px;
+  width: 20px;
+  border-radius: 50%;
+  background: hsl(var(--primary));
+  cursor: pointer;
+  border: 2px solid hsl(var(--background));
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+.slider::-moz-range-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}

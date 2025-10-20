@@ -8,13 +8,16 @@ import { Clock, Play, MoreHorizontal } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 import { userApi } from "@/lib/api/user"
 import { usePlayer } from "../player/player-provider"
+import { useAuth } from "../auth/auth-provider"
 
 export function RecentlyPlayedSection() {
   const { playTrack } = usePlayer()
+  const { user } = useAuth()
 
   const { data: recentTracks, isLoading } = useQuery({
     queryKey: ["recent-tracks"],
     queryFn: () => userApi.getRecentlyPlayed(),
+    enabled: !!user, // Only run when user is authenticated
   })
 
   if (isLoading) {
