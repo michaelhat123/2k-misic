@@ -101,7 +101,7 @@ const musicCategories = [
 ]
 
 interface MusicDiscoveryProps {
-  onCategorySelect: (category: string, artist: string) => void
+  onCategorySelect: (category: string, artist: string, spotifyId: string) => void
   onClose?: () => void
 }
 
@@ -184,7 +184,7 @@ export function MusicDiscovery({ onCategorySelect, onClose }: MusicDiscoveryProp
   }, [])
 
   const handleCategoryClick = (category: typeof musicCategories[0]) => {
-    onCategorySelect(category.name, category.artist)
+    onCategorySelect(category.name, category.artist, category.spotifyId)
   }
 
   return (

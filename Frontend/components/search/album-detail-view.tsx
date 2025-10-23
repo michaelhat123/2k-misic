@@ -106,37 +106,59 @@ export function AlbumDetailView({
     return filtered;
   }, [tracks, searchQuery, sortBy]);
 
-  // Play track handler
-  const handlePlayTrack = (track: any) => {
-    if (shuffle && tracks.length > 0) {
-      if (currentTrack?.id !== track.id) {
-        const shuffled = [...tracks].sort(() => Math.random() - 0.5);
-        const queue = shuffled.map(t => ({
+  // Shuffle function using Fisher-Yates algorithm
+  const shuffleArray = (array: any[]) => {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  };
+
+  // Handle shuffle toggle
+  const handleShuffleToggle = () => {
+    if (!shuffle) {
+      // Turning shuffle ON - shuffle the current queue
+      if (filteredTracks && filteredTracks.length > 0) {
+        const shuffledTracks = shuffleArray(filteredTracks);
+        
+        const globalQueue = shuffledTracks.map(t => ({
           id: t.id,
           title: t.name,
           artist: t.artists?.map((a: any) => a.name).join(', ') || '',
-          album: t.album?.name || '',
-          albumArt: t.album?.images?.[0]?.url || '',
+          album: album.name || '',
+          albumArt: album.images?.[0]?.url || '',
           duration: t.duration_ms ? Math.floor(t.duration_ms / 1000) : 0,
           url: t.external_urls?.spotify || '',
+          spotifyId: t.id,
           genre: '',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         }));
-        setQueue(queue);
+        
+        setQueue(globalQueue);
       }
     } else {
+      // Turning shuffle OFF - clear the queue entirely
       clearQueue();
     }
+    
+    // Toggle the player's shuffle state
+    toggleShuffle();
+  };
 
+  // Play track handler
+  const handlePlayTrack = (track: any) => {
     playTrack({
       id: track.id,
       title: track.name,
       artist: track.artists?.map((a: any) => a.name).join(', ') || '',
-      album: track.album?.name || '',
-      albumArt: track.album?.images?.[0]?.url || '',
+      album: album.name || '',
+      albumArt: album.images?.[0]?.url || '',
       duration: track.duration_ms ? Math.floor(track.duration_ms / 1000) : 0,
       url: track.external_urls?.spotify || '',
+      spotifyId: track.id,
       genre: '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -377,12 +399,29 @@ export function AlbumDetailView({
           <button
             onClick={() => {
               if (filteredTracks.length > 0) {
+                // Create queue with all tracks
+                const globalQueue = filteredTracks.map(t => ({
+                  id: t.id,
+                  title: t.name,
+                  artist: t.artists?.map((a: any) => a.name).join(', ') || '',
+                  album: album.name || '',
+                  albumArt: album.images?.[0]?.url || '',
+                  duration: t.duration_ms ? Math.floor(t.duration_ms / 1000) : 0,
+                  url: t.external_urls?.spotify || '',
+                  spotifyId: t.id,
+                  genre: '',
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString()
+                }));
+                
+                setQueue(globalQueue);
                 handlePlayTrack(filteredTracks[0]);
               }
             }}
-            className="w-10 h-10 rounded-full bg-[#00BFFF] hover:bg-[#0099CC] transition-colors flex items-center justify-center group"
+            disabled={filteredTracks.length === 0}
+            className="w-10 h-10 rounded-full bg-[#00BFFF] hover:bg-[#0099CC] transition-colors flex items-center justify-center group disabled:bg-[#00BFFF]/50 disabled:cursor-not-allowed"
           >
-            <Play className="w-5 h-5 text-[#222222] ml-0.5 group-hover:scale-110 transition-transform" />
+            <Play className="w-4 h-4 text-[#222222] ml-0.5" />
           </button>
           
           {/* Album Name */}
@@ -441,17 +480,34 @@ export function AlbumDetailView({
               <button 
                 onClick={() => {
                   if (filteredTracks.length > 0) {
+                    // Create queue with all tracks
+                    const globalQueue = filteredTracks.map(t => ({
+                      id: t.id,
+                      title: t.name,
+                      artist: t.artists?.map((a: any) => a.name).join(', ') || '',
+                      album: album.name || '',
+                      albumArt: album.images?.[0]?.url || '',
+                      duration: t.duration_ms ? Math.floor(t.duration_ms / 1000) : 0,
+                      url: t.external_urls?.spotify || '',
+                      spotifyId: t.id,
+                      genre: '',
+                      createdAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString()
+                    }));
+                    
+                    setQueue(globalQueue);
                     handlePlayTrack(filteredTracks[0]);
                   }
                 }}
-                className="w-12 h-12 bg-[#00BFFF] hover:bg-[#00BFFF]/80 rounded-full flex items-center justify-center transition-colors"
+                disabled={filteredTracks.length === 0}
+                className="w-12 h-12 bg-[#00BFFF] hover:bg-[#00BFFF]/80 rounded-full flex items-center justify-center transition-colors disabled:bg-[#00BFFF]/50 disabled:cursor-not-allowed"
               >
                 <Play className="w-5 h-5 text-[#222222] ml-0.5" />
               </button>
               
               {/* Shuffle Button */}
               <button 
-                onClick={toggleShuffle}
+                onClick={handleShuffleToggle}
                 className={`p-2 transition-colors ${
                   shuffle 
                     ? 'text-[#00BFFF] hover:text-[#00BFFF]/80' 

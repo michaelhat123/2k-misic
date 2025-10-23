@@ -91,6 +91,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   apoInstall: () => ipcRenderer.invoke('apo:install'),
   apoReadConfig: () => ipcRenderer.invoke('apo:readConfig'),
   apoWriteConfig: (configContent) => ipcRenderer.invoke('apo:writeConfig', configContent),
+
+  // Media controls for taskbar thumbnail buttons
+  sendPlayerState: (state) => ipcRenderer.send('player:state-changed', state),
+  sendTrackChange: (track) => ipcRenderer.send('player:track-changed', track),
+  onMediaControl: (callback) => {
+    // CRITICAL: Remove ALL previous listeners to prevent accumulation
+    ipcRenderer.removeAllListeners('media-control')
+    ipcRenderer.on('media-control', (_event, action) => callback(action))
+  },
 })
 
 // Security: Remove any Node.js APIs from the window object

@@ -74,6 +74,183 @@ export function ArtistDetailView({
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { playTrack, setQueue, clearQueue, toggleShuffle, shuffle, currentTrack, isPlaying } = usePlayer();
 
+  // Generate dynamic fallback biography based on Spotify data
+  const generateFallbackBio = useCallback((artistData: any, bioData?: any) => {
+    const name = artistData.name || 'This artist';
+    const genres = artistData.genres || [];
+    const followers = artistData.followers?.total;
+    const popularity = artistData.popularity; // 0-100
+    
+    // Try to extract country from tags or biography data
+    let country = '';
+    const tags = bioData?.tags || [];
+    
+    // Common country names to look for in tags
+    const countryNames = [
+      'Rwanda', 'Kenya', 'Tanzania', 'Uganda', 'Nigeria', 'Ghana', 'South Africa',
+      'USA', 'UK', 'Canada', 'France', 'Germany', 'Spain', 'Italy', 'Brazil',
+      'Mexico', 'Argentina', 'Colombia', 'Japan', 'Korea', 'China', 'India',
+      'Australia', 'Jamaica', 'Trinidad', 'Barbados', 'Congo', 'Senegal', 'Mali',
+      'Cameroon', 'Ethiopia', 'Morocco', 'Egypt', 'Algeria', 'Tunisia'
+    ];
+    
+    // Find country in tags
+    for (const tag of tags) {
+      const tagLower = tag.toLowerCase();
+      for (const countryName of countryNames) {
+        if (tagLower === countryName.toLowerCase() || tagLower.includes(countryName.toLowerCase())) {
+          country = countryName;
+          break;
+        }
+      }
+      if (country) break;
+    }
+    
+    // Calculate popularity level
+    let popularityLevel = 'emerging';
+    let popularityDesc = 'steadily building a presence in the music scene';
+    if (popularity >= 80) {
+      popularityLevel = 'globally renowned';
+      popularityDesc = 'commanding massive attention across streaming platforms worldwide';
+    } else if (popularity >= 60) {
+      popularityLevel = 'widely recognized';
+      popularityDesc = 'establishing a major force in contemporary music';
+    } else if (popularity >= 40) {
+      popularityLevel = 'rising';
+      popularityDesc = 'rapidly gaining recognition and expanding the audience';
+    }
+    
+    // Format follower count
+    const formatFollowers = (count: number) => {
+      if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
+      if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
+      return count.toString();
+    };
+    
+    // Helper function to get country adjective
+    const getCountryAdjective = (countryName: string) => {
+      const adjectives: { [key: string]: string } = {
+        'Rwanda': 'Rwandan',
+        'Kenya': 'Kenyan',
+        'Tanzania': 'Tanzanian',
+        'Uganda': 'Ugandan',
+        'Nigeria': 'Nigerian',
+        'Ghana': 'Ghanaian',
+        'South Africa': 'South African',
+        'USA': 'American',
+        'UK': 'British',
+        'Canada': 'Canadian',
+        'France': 'French',
+        'Germany': 'German',
+        'Spain': 'Spanish',
+        'Italy': 'Italian',
+        'Brazil': 'Brazilian',
+        'Mexico': 'Mexican',
+        'Argentina': 'Argentinian',
+        'Colombia': 'Colombian',
+        'Japan': 'Japanese',
+        'Korea': 'Korean',
+        'China': 'Chinese',
+        'India': 'Indian',
+        'Australia': 'Australian',
+        'Jamaica': 'Jamaican',
+        'Congo': 'Congolese',
+        'Senegal': 'Senegalese',
+        'Mali': 'Malian',
+        'Cameroon': 'Cameroonian',
+        'Ethiopia': 'Ethiopian',
+        'Morocco': 'Moroccan',
+        'Egypt': 'Egyptian'
+      };
+      return adjectives[countryName] || `${countryName}`;
+    };
+    
+    // Helper function to filter and clean genre names
+    const getCleanGenres = (genreList: string[]) => {
+      // List of obscure/weird genres to skip
+      const skipGenres = [
+        'bongo flava', 'bongo', 'flava', 'meme rap', 'vapor twitch', 
+        'escape room', 'drift phonk', 'pixie', 'weirdcore'
+      ];
+      
+      // Preferred common genres
+      const preferredGenres = [
+        'afrobeat', 'afrobeats', 'afropop', 'hip hop', 'rap', 'pop', 
+        'r&b', 'rnb', 'soul', 'jazz', 'rock', 'reggae', 'dancehall',
+        'electronic', 'edm', 'house', 'trap', 'drill', 'amapiano',
+        'gospel', 'country', 'folk', 'indie', 'alternative', 'metal'
+      ];
+      
+      // Filter out weird genres and normalize
+      const cleanedGenres = genreList
+        .filter(genre => {
+          const lowerGenre = genre.toLowerCase();
+          return !skipGenres.some(skip => lowerGenre.includes(skip));
+        })
+        .map(genre => {
+          // Normalize common variations
+          const lower = genre.toLowerCase();
+          if (lower.includes('afro')) return 'afrobeat';
+          if (lower.includes('hip hop') || lower.includes('hip-hop')) return 'hip hop';
+          if (lower.includes('r&b') || lower.includes('rnb')) return 'R&B';
+          return genre;
+        });
+      
+      // If no clean genres, return generic based on country or just 'music'
+      if (cleanedGenres.length === 0) {
+        if (country) return ['afrobeat']; // Default for African artists
+        return ['contemporary'];
+      }
+      
+      return cleanedGenres;
+    };
+    
+    // Choose bio variation based on available data
+    if (country && followers && followers > 0) {
+      // Bio Type 1: Country + followers + popularity
+      const cleanGenres = getCleanGenres(genres);
+      const genreList = cleanGenres.length > 0 ? cleanGenres.slice(0, 2).join(' and ') : 'contemporary';
+      const countryAdj = getCountryAdjective(country);
+      const estimatedListeners = formatFollowers(followers * 2); // Double for all platforms estimate
+      return {
+        main: `${name} is a ${popularityLevel} artist from ${country}, bringing authentic sounds and cultural richness to the global music scene. With a dedicated following of ${estimatedListeners} listeners across all platforms, this artist continues to captivate audiences with distinctive ${genreList} music. The sound bridges traditional ${countryAdj} influences with modern production, ${popularityDesc}. Each release showcases a deep connection to roots while embracing innovative sounds that resonate with fans worldwide.`,
+        sub: `Explore the complete discography on 2k Music to discover how ${name} represents ${country}'s vibrant music culture on the world stage.`
+      };
+    } else if (country) {
+      // Bio Type 2: Country only
+      const cleanGenres = getCleanGenres(genres);
+      const genreList = cleanGenres.length > 0 ? cleanGenres.slice(0, 2).join(' and ') : 'music';
+      const countryAdj = getCountryAdjective(country);
+      return {
+        main: `${name} is a ${popularityLevel} artist hailing from ${country}, bringing a distinctive voice that reflects the rich musical heritage of the homeland. This work in ${genreList} showcases the vibrant sounds and cultural stories of ${country}, creating bridges between local traditions and global audiences. Through this artistry, ${name} contributes to the growing international recognition of ${countryAdj} music, demonstrating how authentic cultural expression resonates across borders.`,
+        sub: `Dive into the catalog on 2k Music to experience the unique sound of ${country} through ${name}'s artistic vision.`
+      };
+    } else if (genres.length > 0 && followers && followers > 0) {
+      // Bio Type 3: Genres + followers
+      const cleanGenres = getCleanGenres(genres);
+      const genreList = cleanGenres.slice(0, 3).join(', ').replace(/,([^,]*)$/, ' and$1');
+      const mainGenre = cleanGenres[0] || 'contemporary';
+      const estimatedListeners = formatFollowers(followers * 2); // Double for all platforms estimate
+      return {
+        main: `${name} is a ${popularityLevel} artist who has carved out a distinctive space in the ${genreList} scene. With a dedicated following of ${estimatedListeners} listeners across all platforms, this artist continues to captivate audiences with an innovative approach to ${mainGenre}. The music reflects a unique blend of artistic vision and contemporary sound, ${popularityDesc}. Each release showcases evolution as an artist, demonstrating both technical mastery and creative depth that keeps fans engaged and coming back for more.`,
+        sub: 'Explore the complete discography on 2k Music to discover the full range of the musical journey, from early releases to latest work.'
+      };
+    } else if (followers && followers > 0) {
+      // Bio Type 4: Followers/popularity only
+      const estimatedListeners = formatFollowers(followers * 2); // Double for all platforms estimate
+      return {
+        main: `${name} is a ${popularityLevel} artist who has built an impressive presence in the music industry, with ${estimatedListeners} dedicated listeners across all platforms actively following this career. The ability to connect with audiences through authentic musical expression has earned a loyal fanbase that continues to grow. ${name} represents the kind of artist who understands that great music transcends trends, focusing instead on creating timeless work that speaks to the human experience.`,
+        sub: 'Check out the tracks and albums on 2k Music to understand why fans keep coming back and what makes this music so compelling.'
+      };
+    } else {
+      // Bio Type 5: Minimal fallback
+      return {
+        main: `${name} is an artist featured on 2k Music, offering a collection of tracks that showcase a unique musical perspective. While detailed biographical information is currently limited, the music speaks for itself, inviting listeners to discover and explore this artistic vision. Every artist has a story to tell through work, and ${name} is no exception—these songs provide a window into a creative world and musical journey.`,
+        sub: 'Biography information from Last.fm is currently unavailable for this artist. Explore the available tracks and albums to form your own impression of the sound.'
+      };
+    }
+  }, []);
+
   // Fetch artist images and biography
   useEffect(() => {
     const fetchArtistData = async () => {
@@ -327,8 +504,13 @@ export function ArtistDetailView({
         }
       };
       extractAllColors();
+    } else if (artist.images && artist.images.length > 0) {
+      // Fallback: Extract color from Spotify artist image
+      extractDominantColor(artist.images[0].url)
+        .then(color => setDominantColor(color))
+        .catch(() => setDominantColor('#3b82f6'));
     }
-  }, [artistImages, extractDominantColor]);
+  }, [artistImages, artist.images, extractDominantColor]);
 
   // Update dominant color instantly when image index changes (using pre-extracted colors)
   useEffect(() => {
@@ -906,7 +1088,7 @@ export function ArtistDetailView({
           {/* About Section - Merged Card with Artist Images and Bio */}
           <div className="mt-8 mb-8 pr-6">
             <h2 className="text-lg font-semibold text-white mb-4 pl-3">About the artist</h2>
-            {loadingBio || artistImages.length === 0 ? (
+            {loadingBio ? (
               /* Single skeleton covering entire About section */
               <div className="grid grid-cols-1 md:grid-cols-2 gap-0 pl-3">
                 <div className="relative aspect-square md:rounded-l-xl rounded-t-xl md:rounded-tr-none overflow-hidden bg-gradient-to-br from-gray-800/50 via-gray-900/70 to-gray-800/50 animate-pulse"></div>
@@ -975,9 +1157,26 @@ export function ArtistDetailView({
                     )}
                   </>
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <User className="w-20 h-20 text-gray-600" />
-                  </div>
+                  /* Fallback to Spotify artist image when no Last.fm images */
+                  artist.images && artist.images.length > 0 ? (
+                    <>
+                      <img
+                        src={artist.images[0].url}
+                        alt={artist.name}
+                        className="w-full h-full object-cover"
+                      />
+                      {/* Artist Name Overlay - Bottom Left */}
+                      <div className="absolute bottom-0 left-2 pb-1">
+                        <h3 className="text-white text-base font-bold drop-shadow-2xl">
+                          {artist.name}
+                        </h3>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <User className="w-20 h-20 text-gray-600" />
+                    </div>
+                  )
                 )}
               </div>
 
@@ -1004,12 +1203,22 @@ export function ArtistDetailView({
                             </div>
                           </div>
                         )}
-                        {biography.biography && (
+                        {biography.biography ? (
                           <p className="leading-relaxed text-base line-clamp-6">
                             {biography.biography.length > 300 
                               ? `${biography.biography.substring(0, 300)}...` 
                               : biography.biography}
                           </p>
+                        ) : (
+                          /* Show fallback bio when biography text is missing */
+                          (() => {
+                            const fallbackBio = generateFallbackBio(artist, biography);
+                            return (
+                              <p className="leading-relaxed text-base line-clamp-6">
+                                {fallbackBio.main}
+                              </p>
+                            );
+                          })()
                         )}
                         {biography.tags && biography.tags.length > 0 && (
                           <div>
@@ -1025,7 +1234,19 @@ export function ArtistDetailView({
                         )}
                       </div>
                     ) : (
-                      <p className="text-base text-white/60">No biography available</p>
+                      (() => {
+                        const fallbackBio = generateFallbackBio(artist, null);
+                        return (
+                          <div className="space-y-3">
+                            <p className="text-base text-white/90 leading-relaxed">
+                              {fallbackBio.main}
+                            </p>
+                            <p className="text-sm text-white/60 italic">
+                              {fallbackBio.sub}
+                            </p>
+                          </div>
+                        );
+                      })()
                     )}
                   </div>
                 </ScrollArea>
@@ -1186,7 +1407,7 @@ export function ArtistDetailView({
             <ScrollArea className="h-[calc(90vh-250px)] pr-6">
               {biography ? (
                 <div className="space-y-8">
-                  {biography.biography && (
+                  {biography.biography ? (
                     <div>
                       <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
                         <div className="w-1 h-6 bg-[#00BFFF] rounded-full"></div>
@@ -1196,6 +1417,25 @@ export function ArtistDetailView({
                         {biography.biography}
                       </p>
                     </div>
+                  ) : (
+                    /* Show fallback bio in dialog when biography text is missing */
+                    (() => {
+                      const fallbackBio = generateFallbackBio(artist, biography);
+                      return (
+                        <div>
+                          <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                            <div className="w-1 h-6 bg-[#00BFFF] rounded-full"></div>
+                            About
+                          </h3>
+                          <p className="leading-relaxed text-lg text-gray-200 mb-4">
+                            {fallbackBio.main}
+                          </p>
+                          <p className="text-base text-gray-400 italic">
+                            {fallbackBio.sub}
+                          </p>
+                        </div>
+                      );
+                    })()
                   )}
                   {biography.tags && biography.tags.length > 0 && (
                     <div>
@@ -1217,7 +1457,71 @@ export function ArtistDetailView({
                   )}
                 </div>
               ) : (
-                <p className="text-gray-400 text-center py-8">No biography available</p>
+                (() => {
+                  const fallbackBio = generateFallbackBio(artist, null);
+                  return (
+                    <div className="space-y-6">
+                      <div>
+                        <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                          <div className="w-1 h-6 bg-[#00BFFF] rounded-full"></div>
+                          About
+                        </h3>
+                        <p className="leading-relaxed text-lg text-gray-200 mb-4">
+                          {fallbackBio.main}
+                        </p>
+                        <p className="text-base text-gray-400 italic">
+                          {fallbackBio.sub}
+                        </p>
+                      </div>
+                      
+                      {/* Show genres if available */}
+                      {artist.genres && artist.genres.length > 0 && (
+                        <div>
+                          <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                            <div className="w-1 h-6 bg-[#00BFFF] rounded-full"></div>
+                            Genres
+                          </h3>
+                          <div className="flex flex-wrap gap-3">
+                            {artist.genres.map((genre: string, index: number) => (
+                              <span 
+                                key={index} 
+                                className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-sm text-gray-300 transition-colors"
+                              >
+                                {genre}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Show stats if available */}
+                      {artist.followers?.total && (
+                        <div>
+                          <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                            <div className="w-1 h-6 bg-[#00BFFF] rounded-full"></div>
+                            Statistics
+                          </h3>
+                          <div className="grid grid-cols-2 gap-6">
+                            <div className="bg-white/5 border border-white/10 rounded-lg p-4">
+                              <span className="text-gray-400 text-sm uppercase tracking-wide">Followers</span>
+                              <p className="text-[#00BFFF] text-3xl font-bold mt-2">
+                                {artist.followers.total.toLocaleString()}
+                              </p>
+                            </div>
+                            {artist.popularity !== undefined && (
+                              <div className="bg-white/5 border border-white/10 rounded-lg p-4">
+                                <span className="text-gray-400 text-sm uppercase tracking-wide">Popularity</span>
+                                <p className="text-[#00BFFF] text-3xl font-bold mt-2">
+                                  {artist.popularity}/100
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()
               )}
             </ScrollArea>
           </div>

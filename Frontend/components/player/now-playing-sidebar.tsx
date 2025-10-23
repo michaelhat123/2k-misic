@@ -288,7 +288,8 @@ export function NowPlayingSidebar({
     
     const connectSocket = async () => {
       const { io } = await import('socket.io-client')
-      socket = io('http://localhost:3001', {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+      socket = io(API_BASE_URL, {
         path: '/download-progress',
         transports: ['websocket'],
       })
@@ -570,69 +571,112 @@ export function NowPlayingSidebar({
     return null
   }
 
-  // Generate fallback biography from Spotify data
-  const generateFallbackBiography = (artistData: any) => {
-    const name = artistData.name || currentTrack?.artist
+  // Generate fallback biography from Spotify data (matching artist-detail-view logic)
+  const generateFallbackBiography = (artistData: any, bioData?: any) => {
+    const name = artistData.name || currentTrack?.artist || 'This artist'
     const genres = artistData.genres || []
     const followers = artistData.followers?.total || 0
     const popularity = artistData.popularity || 0
     
-    // Try to infer nationality from genres
-    const inferNationality = (genres: string[]) => {
-      const genreMap: { [key: string]: string } = {
-        'uk': 'British',
-        'british': 'British', 
-        'latin': 'Latin American',
-        'k-pop': 'South Korean',
-        'j-pop': 'Japanese',
-        'afrobeat': 'African',
-        'reggaeton': 'Latin American',
-        'french': 'French',
-        'german': 'German',
-        'italian': 'Italian',
-        'spanish': 'Spanish'
-      }
-      
-      for (const genre of genres) {
-        for (const [key, nationality] of Object.entries(genreMap)) {
-          if (genre.toLowerCase().includes(key)) {
-            return nationality
-          }
+    // Try to extract country from tags
+    let country = ''
+    const tags = bioData?.tags || []
+    const countryNames = [
+      'Rwanda', 'Kenya', 'Tanzania', 'Uganda', 'Nigeria', 'Ghana', 'South Africa',
+      'USA', 'UK', 'Canada', 'France', 'Germany', 'Spain', 'Italy', 'Brazil',
+      'Mexico', 'Argentina', 'Colombia', 'Japan', 'Korea', 'China', 'India',
+      'Australia', 'Jamaica', 'Trinidad', 'Barbados', 'Congo', 'Senegal', 'Mali',
+      'Cameroon', 'Ethiopia', 'Morocco', 'Egypt', 'Algeria', 'Tunisia'
+    ]
+    
+    for (const tag of tags) {
+      const tagLower = tag.toLowerCase()
+      for (const countryName of countryNames) {
+        if (tagLower === countryName.toLowerCase() || tagLower.includes(countryName.toLowerCase())) {
+          country = countryName
+          break
         }
       }
-      return null
+      if (country) break
     }
     
-    const nationality = inferNationality(genres)
-    const primaryGenre = genres[0] || 'music'
-    const popularityLevel = popularity > 80 ? 'highly popular' : popularity > 60 ? 'popular' : popularity > 40 ? 'emerging' : 'rising'
+    // Calculate popularity level
+    let popularityLevel = 'emerging'
+    let popularityDesc = 'steadily building a presence in the music scene'
+    if (popularity >= 80) {
+      popularityLevel = 'globally renowned'
+      popularityDesc = 'commanding massive attention across streaming platforms worldwide'
+    } else if (popularity >= 60) {
+      popularityLevel = 'widely recognized'
+      popularityDesc = 'establishing a major force in contemporary music'
+    } else if (popularity >= 40) {
+      popularityLevel = 'rising'
+      popularityDesc = 'rapidly gaining recognition and expanding the audience'
+    }
     
-    // Generate biography
-    let bio = `${name} is ${nationality ? `a ${nationality} ` : 'an '}artist`
+    // Format follower count
+    const formatFollowers = (count: number) => {
+      if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`
+      if (count >= 1000) return `${(count / 1000).toFixed(1)}K`
+      return count.toString()
+    }
     
-    if (genres.length > 0) {
-      bio += ` known for their work in ${primaryGenre}`
-      if (genres.length > 1) {
-        bio += ` and ${genres.slice(1, 3).join(', ')}`
+    // Country adjectives
+    const getCountryAdjective = (countryName: string) => {
+      const adjectives: { [key: string]: string } = {
+        'Rwanda': 'Rwandan', 'Kenya': 'Kenyan', 'Tanzania': 'Tanzanian',
+        'Uganda': 'Ugandan', 'Nigeria': 'Nigerian', 'Ghana': 'Ghanaian',
+        'South Africa': 'South African', 'USA': 'American', 'UK': 'British',
+        'Jamaica': 'Jamaican', 'Congo': 'Congolese'
       }
-      bio += '.'
-    } else {
-      bio += ' making waves in the music industry.'
+      return adjectives[countryName] || `${countryName}`
     }
     
-    bio += ` With ${followers.toLocaleString()} followers on Spotify, ${name} has established themselves as a ${popularityLevel} force in contemporary music.`
+    // Clean genres - filter out obscure ones
+    const getCleanGenres = (genreList: string[]) => {
+      const skipGenres = ['bongo flava', 'bongo', 'flava', 'meme rap', 'vapor twitch']
+      const cleanedGenres = genreList
+        .filter(genre => !skipGenres.some(skip => genre.toLowerCase().includes(skip)))
+        .map(genre => {
+          const lower = genre.toLowerCase()
+          if (lower.includes('afro')) return 'afrobeat'
+          if (lower.includes('hip hop') || lower.includes('hip-hop')) return 'hip hop'
+          if (lower.includes('r&b') || lower.includes('rnb')) return 'R&B'
+          return genre
+        })
+      
+      if (cleanedGenres.length === 0) {
+        return country ? ['afrobeat'] : ['contemporary']
+      }
+      return cleanedGenres
+    }
     
-    if (genres.length > 0) {
-      bio += ` Their sound blends elements of ${genres.slice(0, 2).join(' and ')}, creating a distinctive musical identity that resonates with fans worldwide.`
+    const cleanGenres = getCleanGenres(genres)
+    const estimatedListeners = formatFollowers(followers * 2) // Double for all platforms
+    
+    // Generate biography based on available data
+    let bio = ''
+    
+    if (country && followers > 0) {
+      const genreList = cleanGenres.slice(0, 2).join(' and ')
+      const countryAdj = getCountryAdjective(country)
+      bio = `${name} is a ${popularityLevel} artist from ${country}, bringing authentic sounds to the global music scene. With ${estimatedListeners} listeners across all platforms, this artist captivates audiences with distinctive ${genreList} music. The sound bridges traditional ${countryAdj} influences with modern production, ${popularityDesc}.`
+    } else if (cleanGenres.length > 0 && followers > 0) {
+      const genreList = cleanGenres.slice(0, 2).join(' and ')
+      bio = `${name} is a ${popularityLevel} artist in the ${genreList} scene. With ${estimatedListeners} listeners across all platforms, this artist continues to captivate audiences with an innovative approach to music. ${popularityDesc.charAt(0).toUpperCase() + popularityDesc.slice(1)}.`
+    } else if (followers > 0) {
+      bio = `${name} is a ${popularityLevel} artist with ${estimatedListeners} dedicated listeners across all platforms. The ability to connect with audiences through authentic musical expression has earned a loyal fanbase that continues to grow.`
+    } else {
+      bio = `${name} is an artist making waves in the music industry. The music speaks for itself, inviting listeners to discover and explore this unique artistic vision.`
     }
     
     return {
       name,
       biography: bio,
       summary: bio.split('.')[0] + '.',
-      followers,
+      followers: followers * 2, // Show doubled count
       popularity,
-      genres,
+      genres: cleanGenres,
       source: 'Generated from Spotify data'
     }
   }
@@ -655,7 +699,8 @@ export function NowPlayingSidebar({
     
     try {
       // First try to get biography from your API using primary artist
-      const response = await fetch(`http://localhost:3001/artist/${encodeURIComponent(primaryArtist)}/biography`)
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+      const response = await fetch(`${API_BASE_URL}/artist/${encodeURIComponent(primaryArtist)}/biography`)
       
       if (response.ok) {
         const data = await response.json()
@@ -667,19 +712,31 @@ export function NowPlayingSidebar({
       }
       
       // If no biography found, try to get Spotify artist data for fallback using primary artist
-      const spotifyResponse = await fetch(`http://localhost:3001/spotify/artist-info/${encodeURIComponent(primaryArtist)}`);
+      const spotifyResponse = await fetch(`${API_BASE_URL}/spotify/artist-info/${encodeURIComponent(primaryArtist)}`);
+      
+      // Also try to get tags from Last.fm for country detection
+      let bioTags = null
+      try {
+        const bioResponse = await fetch(`${API_BASE_URL}/artist/${encodeURIComponent(primaryArtist)}/biography`)
+        if (bioResponse.ok) {
+          const bioData = await bioResponse.json()
+          bioTags = bioData
+        }
+      } catch (err) {
+        // Ignore error, bioTags will stay null
+      }
       
       if (spotifyResponse.ok) {
         const spotifyData = await spotifyResponse.json()
-        const fallbackBio = generateFallbackBiography(spotifyData)
+        const fallbackBio = generateFallbackBiography(spotifyData, bioTags)
         setBiography(fallbackBio)
         setNPVCachedBiography(primaryArtist, fallbackBio); // Cache using primary artist
       } else {
         // Last resort: minimal fallback using primary artist
         const minimalBio = {
           name: primaryArtist,
-          biography: `${primaryArtist} is a talented artist making their mark in the music industry. Known for their unique sound and creative approach to music, they continue to captivate audiences with their artistic vision.`,
-          summary: `${primaryArtist} is a talented artist making their mark in the music industry.`,
+          biography: `${primaryArtist} is an artist making waves in the music industry. The music speaks for itself, inviting listeners to discover and explore this unique artistic vision.`,
+          summary: `${primaryArtist} is an artist making waves in the music industry.`,
           source: 'Generated fallback'
         }
         setBiography(minimalBio)
@@ -690,7 +747,7 @@ export function NowPlayingSidebar({
       // Minimal fallback on error using primary artist
       const errorBio = {
         name: primaryArtist,
-        biography: `${primaryArtist} is an artist whose music speaks for itself. Their creative work continues to resonate with listeners around the world.`,
+        biography: `${primaryArtist} is an artist whose music speaks for itself. This creative work continues to resonate with listeners around the world.`,
         summary: `${primaryArtist} is an artist whose music speaks for itself.`,
         source: 'Error fallback'
       }
@@ -994,7 +1051,7 @@ export function NowPlayingSidebar({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-background z-50 overflow-hidden"
+      className="fixed inset-0 bg-background z-[150] overflow-hidden"
     >
       {/* Background track image with parallax effect */}
       <div 
@@ -1320,7 +1377,7 @@ export function NowPlayingSidebar({
       {/* Full Biography Dialog - Matching card design */}
       {showFullBiography && biography && (
         <div
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[160] flex items-center justify-center p-4"
           onClick={() => setShowFullBiography(false)}
         >
           <motion.div

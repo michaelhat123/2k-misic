@@ -14,6 +14,7 @@ export interface Track {
   duration: number
   url: string // YouTube or other streaming URL
   spotifyUrl?: string // Spotify track URL for downloads
+  spotifyId?: string // Spotify track ID for API operations
   genre?: string
   year?: number
   createdAt: string

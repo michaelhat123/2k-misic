@@ -1,7 +1,7 @@
 // Clear the localStorage cache
 localStorage.removeItem('artist-images-cache')
 
-// Verify it's gone
+// Verify it's gone+
 console.log('Cache cleared:', localStorage.getItem('artist-images-cache'))
 
 // This will trigger a full page reload which clears the memory cache

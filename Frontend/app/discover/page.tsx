@@ -1,10 +1,41 @@
 "use client"
 
+import { useState } from "react"
 import { MusicDiscovery } from "@/components/discovery/music-discovery"
+import { GenreDetailView } from "@/components/discovery/genre-detail-view"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Radio } from "lucide-react"
 
 export default function DiscoverPage() {
+  const [selectedGenre, setSelectedGenre] = useState<{
+    name: string
+    artist: string
+    spotifyId: string
+  } | null>(null)
+
+  const handleCategorySelect = (genreName: string, artistName: string, spotifyId: string) => {
+    setSelectedGenre({ name: genreName, artist: artistName, spotifyId })
+  }
+
+  const handleBack = () => {
+    setSelectedGenre(null)
+  }
+
+  // Show genre detail view if a genre is selected
+  if (selectedGenre) {
+    return (
+      <div className="flex flex-col h-full">
+        <GenreDetailView
+          genreName={selectedGenre.name}
+          artistName={selectedGenre.artist}
+          spotifyId={selectedGenre.spotifyId}
+          onBack={handleBack}
+        />
+      </div>
+    )
+  }
+
+  // Show main discovery page
   return (
     <div className="flex flex-col h-full">
       <ScrollArea className="flex-1">
@@ -23,7 +54,7 @@ export default function DiscoverPage() {
 
         {/* Music Discovery Content */}
         <div className="px-6 pb-6">
-          <MusicDiscovery onCategorySelect={() => {}} />
+          <MusicDiscovery onCategorySelect={handleCategorySelect} />
         </div>
       </ScrollArea>
     </div>

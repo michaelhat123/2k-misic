@@ -17,6 +17,15 @@ const isDev = process.env.NODE_ENV === 'development' ||
 // Keep a global reference of the window object
 let mainWindow
 
+// Track current playback state for taskbar buttons
+// This is the CACHE of renderer state, NOT the source of truth
+let currentPlaybackState = {
+  isPlaying: false,
+  hasTrack: false
+}
+
+// Instant updates - no throttling needed
+
 // Native module loading
 let nativeEqualizer = null
 function loadNativeEqualizer() {
@@ -237,6 +246,11 @@ function createWindow() {
     if (isDev) {
       mainWindow.focus()
     }
+
+    // Setup thumbnail toolbar buttons (Windows only)
+    setTimeout(() => {
+      setupThumbarButtons()
+    }, 1000)
   })
 
   // Intercept close event to hide to tray instead
@@ -246,6 +260,15 @@ function createWindow() {
       mainWindow.hide()
       return false
     }
+  })
+
+  // Re-register thumbbar buttons when window is shown (e.g., from tray)
+  mainWindow.on('show', () => {
+    setupThumbarButtons()
+  })
+  
+  mainWindow.on('restore', () => {
+    setupThumbarButtons()
   })
 
   // Handle window closed
@@ -273,6 +296,33 @@ function createWindow() {
       shell.openExternal(navigationUrl)
     }
   })
+}
+
+// Instant Windows taskbar button updates
+function setupThumbarButtons() {
+  if (process.platform !== 'win32' || !mainWindow) return
+  
+  const iconPath = path.join(__dirname, '../Frontend/public')
+  mainWindow.setThumbarButtons([
+    {
+      tooltip: 'Previous',
+      icon: path.join(iconPath, 'skipback.png'),
+      flags: currentPlaybackState.hasTrack ? [] : ['disabled'],
+      click: () => mainWindow.webContents.send('media-control', 'previous')
+    },
+    {
+      tooltip: currentPlaybackState.isPlaying ? 'Pause' : 'Play',
+      icon: path.join(iconPath, currentPlaybackState.isPlaying ? 'pause.png' : 'play.png'),
+      flags: currentPlaybackState.hasTrack ? [] : ['disabled'],
+      click: () => mainWindow.webContents.send('media-control', 'play-pause')
+    },
+    {
+      tooltip: 'Next',
+      icon: path.join(iconPath, 'skipfwd.png'),
+      flags: currentPlaybackState.hasTrack ? [] : ['disabled'],
+      click: () => mainWindow.webContents.send('media-control', 'next')
+    }
+  ])
 }
 
 function createTray() {
@@ -490,6 +540,34 @@ ipcMain.handle('systemEqualizer:isAvailable', async (event) => {
     return typeof nativeEqualizer.initializeSystemHook === 'function'
   } catch (error) {
     return false
+  }
+})
+
+// Instant taskbar sync with renderer state - only update if changed
+ipcMain.on('player:state-changed', (event, state) => {
+  if (process.platform !== 'win32') return
+  
+  const oldIsPlaying = currentPlaybackState.isPlaying
+  const oldHasTrack = currentPlaybackState.hasTrack
+  
+  currentPlaybackState.isPlaying = state.isPlaying
+  currentPlaybackState.hasTrack = !!state.currentTrack
+  
+  // Only update if something actually changed
+  if (oldIsPlaying !== currentPlaybackState.isPlaying || oldHasTrack !== currentPlaybackState.hasTrack) {
+    setupThumbarButtons()
+  }
+})
+
+ipcMain.on('player:track-changed', (event, track) => {
+  if (process.platform !== 'win32') return
+  
+  const oldHasTrack = currentPlaybackState.hasTrack
+  currentPlaybackState.hasTrack = !!track
+  
+  // Only update if changed
+  if (oldHasTrack !== currentPlaybackState.hasTrack) {
+    setupThumbarButtons()
   }
 })
 

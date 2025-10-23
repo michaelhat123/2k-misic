@@ -462,13 +462,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const ongoingRequests = useRef<Map<string, Promise<any>>>(new Map())
   
   const playTrack = async (track: Track, useCache: boolean = true) => {
-    if (!track || !track.id || !track.title) {
-      return
-    }
+    if (!track || !track.id || !track.title) return
     
-    setPlaybackError(null) // Clear any previous errors
+    setPlaybackError(null)
+    
+    // INSTANT: Show player bar immediately with track info
+    dispatch({ type: "SET_TRACK", payload: track })
     dispatch({ type: "SET_LOADING", payload: true })
-    let videoId: string | null = null // Declare at function scope
+    // Don't set playing=true yet - wait until actually ready to play
+    
+    let videoId: string | null = null
     
     // Check if this is a local file - skip YouTube API entirely
     const isLocal = track.id.startsWith('local-') || track.id.startsWith('watched-')
@@ -974,7 +977,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     
     // Use setTimeout to break the render cycle and prevent infinite loops
     setTimeout(() => {
-      // PRIORITY: Shuffle > Repeat > Stop
+      // PRIORITY: Repeat One > Shuffle > Repeat All > Stop
+      // Repeat one should ALWAYS take priority
+      if (state.repeat === "one" && state.currentTrack) {
+        playTrack(state.currentTrack, true) // Use cache
+        return
+      }
+      
       if (state.shuffle && state.queue.length > 0) {
         const currentIndex = state.queue.findIndex((track) => track.id === state.currentTrack?.id)
         
@@ -994,12 +1003,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         return
       }
       
-      // Handle repeat modes
-      if (state.repeat === "one" && state.currentTrack) {
-        playTrack(state.currentTrack, true) // Use cache
-        return
-      }
-      
+      // Handle repeat all
       if (state.repeat === "all" && state.queue.length > 0) {
         const currentIndex = state.queue.findIndex((track) => track.id === state.currentTrack?.id)
         if (currentIndex < state.queue.length - 1) {
@@ -1083,49 +1087,47 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     
     // YouTube player states: -1 (unstarted), 0 (ended), 1 (playing), 2 (paused), 3 (buffering), 5 (cued)
     
-    // Sync play/pause state to prevent desync issues
-    if (playerState === 1 && !state.isPlaying) { // Playing but app thinks it's paused
+    // Only sync state when buffering completes to avoid flickering during user actions
+    // Ignore buffering state (3) to prevent flicker, but sync playing/paused immediately
+    if (playerState === 3) {
+      // Buffering - don't change state
+    } else if (playerState === 1 && !state.isPlaying) {
+      // YouTube started playing - sync immediately
       dispatch({ type: "SET_PLAYING", payload: true })
-    } else if (playerState === 2 && state.isPlaying) { // Paused but app thinks it's playing
+    } else if (playerState === 2 && state.isPlaying) {
+      // YouTube paused - sync immediately
       dispatch({ type: "SET_PLAYING", payload: false })
     }
     
     // Handle video end with delay to avoid race conditions and double execution
     if (playerState === 0) { // Ended
       
-      // Prevent double execution - Clear any existing timeout
+      // Prevent double execution
       if (endTimeoutRef.current) {
         clearTimeout(endTimeoutRef.current)
+        endTimeoutRef.current = null
       }
       
-      // Single delayed execution to prevent race condition
-      endTimeoutRef.current = setTimeout(() => {
-        endTimeoutRef.current = null // Clear reference
-        handleYouTubeEnd() // Use proper repeat logic after delay
-      }, 100) // Shorter delay since we handle end detection better now
+      // INSTANT execution - no delay
+      handleYouTubeEnd()
       return
     }
   }
 
   const handleYouTubeEnd = () => {
-    
-    // Set playing to false first
     dispatch({ type: "SET_PLAYING", payload: false })
-    
-    // 🚀 TRIGGER SMART AUTO-ADVANCE with fresh state
-    setTimeout(() => {
-      setAutoAdvanceTrigger(prev => prev + 1)
-    }, 200) // Small delay for clean transition
+    // INSTANT auto-advance - no delay
+    setAutoAdvanceTrigger(prev => prev + 1)
   }
 
   const nextTrack = useCallback(() => {
-    if (state.queue.length === 0) {
+    // Repeat one - Always replay current track, regardless of queue or shuffle
+    if (state.repeat === "one" && state.currentTrack) {
+      playTrack(state.currentTrack)
       return
     }
     
-    // Repeat one - Always replay current track, regardless of shuffle
-    if (state.repeat === "one" && state.currentTrack) {
-      playTrack(state.currentTrack)
+    if (state.queue.length === 0) {
       return
     }
     
@@ -1307,6 +1309,23 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       nextTrack()
     })
 
+    // Add seek support for taskbar controls
+    navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+      const skipTime = details.seekOffset || 10
+      seekTo(Math.max(0, state.currentTime - skipTime))
+    })
+
+    navigator.mediaSession.setActionHandler('seekforward', (details) => {
+      const skipTime = details.seekOffset || 10
+      seekTo(Math.min(state.duration, state.currentTime + skipTime))
+    })
+
+    navigator.mediaSession.setActionHandler('seekto', (details) => {
+      if (details.seekTime !== null && details.seekTime !== undefined) {
+        seekTo(details.seekTime)
+      }
+    })
+
     // Override YouTube's media session every second
     const interval = setInterval(updateMediaSession, 1000)
 
@@ -1314,7 +1333,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       clearInterval(interval)
     }
 
-  }, [state.currentTrack, state.isPlaying])
+  }, [state.currentTrack, state.isPlaying, state.currentTime, state.duration, seekTo, nextTrack, previousTrack, togglePlay])
 
   // Force stop player - Listen for logout events
   useEffect(() => {
@@ -1346,6 +1365,45 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('forceStopPlayer', handleForceStop)
     }
   }, [])
+
+  // Send player state to main process for Windows thumbnail buttons
+  useEffect(() => {
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.sendPlayerState) {
+      (window as any).electronAPI.sendPlayerState({
+        isPlaying: state.isPlaying,
+        currentTrack: state.currentTrack
+      })
+    }
+  }, [state.isPlaying, state.currentTrack])
+
+  // Listen for media control events from Windows thumbnail buttons
+  // CRITICAL: Use refs to access latest functions WITHOUT re-registering listener
+  const mediaControlTogglePlayRef = useRef(togglePlay)
+  const mediaControlNextRef = useRef(nextTrack)
+  const mediaControlPrevRef = useRef(previousTrack)
+  
+  // Keep refs updated
+  useEffect(() => {
+    mediaControlTogglePlayRef.current = togglePlay
+    mediaControlNextRef.current = nextTrack
+    mediaControlPrevRef.current = previousTrack
+  }, [togglePlay, nextTrack, previousTrack])
+  
+  // Register listener ONLY ONCE on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.onMediaControl) {
+      (window as any).electronAPI.onMediaControl((action: string) => {
+        switch (action) {
+          case 'play-pause': mediaControlTogglePlayRef.current?.()
+            break
+          case 'next': mediaControlNextRef.current?.()
+            break
+          case 'previous': mediaControlPrevRef.current?.()
+            break
+        }
+      })
+    }
+  }, []) // EMPTY DEPS = RUNS ONLY ONCE
 
   return (
     <PlayerContext.Provider

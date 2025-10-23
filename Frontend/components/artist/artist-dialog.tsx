@@ -207,7 +207,8 @@ export const ArtistDialog: React.FC<ArtistDialogProps> = ({
     try {
       
       // First try to get biography from your API
-      const response = await fetch(`http://localhost:3001/artist/${encodeURIComponent(artistName)}/biography`);
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+      const response = await fetch(`${API_BASE_URL}/artist/${encodeURIComponent(artistName)}/biography`);
       
       if (response.ok) {
         const data = await response.json();
@@ -219,7 +220,7 @@ export const ArtistDialog: React.FC<ArtistDialogProps> = ({
       }
       
       // If no biography found, try to get Spotify artist data for fallback
-      const spotifyResponse = await fetch(`http://localhost:3001/spotify/artist-info/${encodeURIComponent(artistName)}`);
+      const spotifyResponse = await fetch(`${API_BASE_URL}/spotify/artist-info/${encodeURIComponent(artistName)}`);
       
       if (spotifyResponse.ok) {
         const spotifyData = await spotifyResponse.json();

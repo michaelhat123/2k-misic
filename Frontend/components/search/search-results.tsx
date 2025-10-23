@@ -141,6 +141,22 @@ export function SearchResults({ results, query, searchQuery, onSearchQueryChange
   const [playingTrack, setPlayingTrack] = useState<string | null>(null);
   const [loadingTracks, setLoadingTracks] = useState<Record<string, number>>({});
 
+  // Now Playing Sidebar visible state (open/closed)
+  const [isNowPlayingVisible, setIsNowPlayingVisible] = useState(false);
+  
+  useEffect(() => {
+    const handleNPVToggle = (e: CustomEvent) => {
+      setIsNowPlayingVisible(e.detail.isOpen && currentTrack !== null);
+    };
+    
+    // Initial check
+    const nowPlayingSidebar = document.querySelector('.w-\\[320px\\]');
+    setIsNowPlayingVisible(!!nowPlayingSidebar && currentTrack !== null);
+    
+    window.addEventListener('npvToggle', handleNPVToggle as EventListener);
+    return () => window.removeEventListener('npvToggle', handleNPVToggle as EventListener);
+  }, [currentTrack]);
+
   // YouTube Music play function with properly timed loading states
   const handlePlayTrack = async (track: any) => {
     try {
@@ -304,7 +320,11 @@ export function SearchResults({ results, query, searchQuery, onSearchQueryChange
   const songsContainerRef = useRef<HTMLDivElement>(null);
   const artistsContainerRef = useRef<HTMLDivElement>(null);
   const albumsContainerRef = useRef<HTMLDivElement>(null);
+  const artistsScrollRef = useRef<HTMLDivElement>(null);
+  const albumsScrollRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState('all')
+
+  // Horizontal scroll works with container-based width (100%) to respond to parent changes
   const [infiniteTracks, setInfiniteTracks] = useState<any[]>([])
   const [infiniteArtists, setInfiniteArtists] = useState<any[]>([])
   const [infiniteAlbums, setInfiniteAlbums] = useState<any[]>([])
@@ -359,6 +379,7 @@ export function SearchResults({ results, query, searchQuery, onSearchQueryChange
   const tracks = results?.tracks || []
   const artists = results?.artists || []
   const albums = results?.albums || []
+
 
   // Load more tracks (infinite scroll)
   const loadMoreTracks = useCallback(async () => {
@@ -1001,12 +1022,16 @@ export function SearchResults({ results, query, searchQuery, onSearchQueryChange
         </div>
       ) : (
         /* All Tab - Default Layout */
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid gap-4" style={{ 
+          gridTemplateColumns: isNowPlayingVisible 
+            ? 'repeat(auto-fill, minmax(280px, 350px))' 
+            : 'repeat(auto-fill, minmax(280px, 500px))'
+        }}>
           {/* Top Result Section (Left) */}
           {topResult && (
-            <div className="space-y-4">
+            <div className="space-y-4 min-w-0">
               <h2 className="text-xl font-bold">Top result</h2>
-              <div className="bg-card/50 hover:bg-card/80 transition-colors rounded-lg p-5 cursor-pointer group">
+              <div className="bg-card/50 hover:bg-card/80 transition-colors rounded-lg p-4 cursor-pointer group">
                 <div className="space-y-4">
                   {/* Album Artwork */}
                   <div className="relative">
@@ -1047,11 +1072,11 @@ export function SearchResults({ results, query, searchQuery, onSearchQueryChange
   </Button>
   {/* Info area content (text, etc.) remains above overlay */}
 </div>
-<div className="flex items-center space-x-2 text-sm text-muted-foreground">
-  <Music className="h-4 w-4" />
-  <span>Song</span>
-  <span>•</span>
-  <span>{topResult.artists?.map((artist: any) => artist.name).join(', ')}</span>
+<div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
+  <Music className="h-4 w-4 flex-shrink-0" />
+  <span className="flex-shrink-0">Song</span>
+  <span className="flex-shrink-0">•</span>
+  <span className="truncate">{topResult.artists?.map((artist: any) => artist.name).join(', ')}</span>
 </div>
                   </div>
                 </div>
@@ -1061,13 +1086,13 @@ export function SearchResults({ results, query, searchQuery, onSearchQueryChange
 
           {/* Songs List Section (Right) */}
           {tracks.length > 0 && (
-            <div className="space-y-4">
+            <div className="space-y-4 min-w-0">
               <h2 className="text-xl font-bold">Songs</h2>
-              <div className="space-y-2">
+              <div className="space-y-2 min-w-0">
                 {tracks.slice(0, 4).map((track: any, index: number) => (
                   <div
                     key={track.id || index}
-                    className="relative flex items-center space-x-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer group"
+                    className="relative flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer group min-w-0"
                   >
                     {/* Track Artwork */}
                     <div className="relative flex-shrink-0">
@@ -1102,7 +1127,7 @@ export function SearchResults({ results, query, searchQuery, onSearchQueryChange
 
                     {/* Track Info */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center gap-2">
                         <p className="text-sm font-medium text-white truncate">
                           {track.name}
                         </p>
@@ -1119,12 +1144,12 @@ export function SearchResults({ results, query, searchQuery, onSearchQueryChange
                     
 
                     {/* Duration */}
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-xs text-muted-foreground flex-shrink-0 hidden lg:block">
                       {track.duration_ms ? formatDuration(track.duration_ms) : '0:00'}
                     </div>
 
                     {/* Song Actions */}
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 hidden lg:block">
                       <SongActions
                         track={{
                           id: track.id,
@@ -1156,14 +1181,26 @@ export function SearchResults({ results, query, searchQuery, onSearchQueryChange
       {activeTab === 'all' && atomicLoaded && atomicResults?.artists?.length > 0 && (
         <div className="space-y-4">
           <h2 className="text-xl font-bold">Artists</h2>
-          <div className="flex space-x-4 overflow-x-auto pb-4" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-            {artists.slice(0, 9).map((artist: any, index: number) => (
+          <div 
+            ref={artistsScrollRef}
+            className={`flex overflow-x-auto pb-4 ${isNowPlayingVisible ? 'space-x-2' : 'space-x-4'}`}
+            style={{ 
+              WebkitOverflowScrolling: 'touch',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              overflowY: 'visible',
+              width: '100%'
+            }}
+          >
+            {artists.slice(0, 7).map((artist: any, index: number) => (
               <div
                 key={artist.id || index}
                 className="flex-shrink-0 cursor-pointer group"
+                style={{ minWidth: isNowPlayingVisible ? '120px' : '160px', width: isNowPlayingVisible ? '120px' : '160px' }}
+                onClick={() => handleArtistClick(artist)}
               >
                 <div className="relative">
-                  <div className="w-32 h-32 border-4 border-transparent group-hover:border-white/20 transition-colors rounded-full overflow-hidden">
+                  <div className={`${isNowPlayingVisible ? 'w-24 h-24' : 'w-32 h-32'} border-4 border-transparent group-hover:border-white/20 transition-colors rounded-full overflow-hidden`} style={{ margin: '0 auto' }}>
                     <OptimizedImage 
                       src={getImageWithFallback(artist, 'artist')} 
                       alt={artist.name}
@@ -1172,12 +1209,6 @@ export function SearchResults({ results, query, searchQuery, onSearchQueryChange
                       isArtist={true}
                     />
                   </div>
-                  <Button
-                    size="icon"
-                    className="absolute bottom-2 right-2 rounded-full bg-green-500 hover:bg-green-600 text-black shadow-lg opacity-0 group-hover:opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0"
-                  >
-                    <Play className="h-4 w-4 fill-current" />
-                  </Button>
                 </div>
                 <div className="mt-3 text-center">
                   <p className="text-sm font-medium text-white truncate max-w-[128px]">
@@ -1195,28 +1226,34 @@ export function SearchResults({ results, query, searchQuery, onSearchQueryChange
       {activeTab === 'all' && atomicLoaded && atomicImagesLoaded && atomicResults?.albums?.length > 0 && (
         <div className="space-y-4">
           <h2 className="text-xl font-bold">Albums</h2>
-          <div className="flex space-x-4 overflow-x-auto pb-4" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-            {albums.slice(0, 8).map((album: any, index: number) => (
+          <div 
+            ref={albumsScrollRef}
+            className={`flex overflow-x-auto pb-4 ${isNowPlayingVisible ? 'space-x-2' : 'space-x-4'}`}
+            style={{ 
+              WebkitOverflowScrolling: 'touch',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              overflowY: 'visible',
+              width: '100%'
+            }}
+          >
+            {albums.slice(0, 5).map((album: any, index: number) => (
               <div
                 key={album.id || index}
-                className="flex-shrink-0 cursor-pointer group w-40"
+                className="flex-shrink-0 cursor-pointer group"
+                style={{ minWidth: isNowPlayingVisible ? '140px' : '180px', width: isNowPlayingVisible ? '140px' : '180px' }}
+                onClick={() => handleAlbumClick(album)}
               >
                 <div className="relative">
                   <OptimizedImage 
                     src={getImageWithFallback(album, 'album')} 
                     alt={album.name}
-                    className="w-full h-32 mb-3"
+                    className={`w-full mb-3 ${isNowPlayingVisible ? 'h-24' : 'h-32'}`}
                     fallbackChar={<Album className="h-8 w-8" />}
                   />
-                  <Button
-                    size="icon"
-                    className="absolute bottom-1 right-1 rounded-full bg-green-500 hover:bg-green-600 text-black shadow-lg opacity-0 group-hover:opacity-100 transition-all w-8 h-8"
-                  >
-                    <Play className="h-3 w-3 fill-current" />
-                  </Button>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-sm font-medium text-white truncate">
+                  <p className="text-xs sm:text-sm font-medium text-white truncate px-1">
                     {album.name}
                   </p>
                   <p className="text-xs text-muted-foreground truncate">
